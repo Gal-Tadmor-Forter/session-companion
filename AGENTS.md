@@ -68,8 +68,6 @@ When adding a new file, put it in the folder matching what it *does*:
   heartbeat/active-session tracking
 - `src/state/` — persisted `globalState` (read/unread, archived sessions)
 - `src/utils/` — pure helpers with no session lifecycle of their own
-- `src/chatPanel/` — the proposed `chatSessionsProvider` integration,
-  independent of the sidebar webview
 - `webview/src/composer/` — the message input and everything anchored to
   it (model/mode pickers, attach menu, mentions, slash palette)
 - `webview/src/sessions/` — the cross-repo Sessions home screen

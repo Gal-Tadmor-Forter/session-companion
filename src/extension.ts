@@ -1,7 +1,6 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
 import { ChatWebviewProvider } from "./providers/webviewProvider";
-import { registerChatSession } from "./chatPanel/chatSession";
 import { sweepStaleHeartbeats } from "./session/heartbeat";
 import { PendingSessionOpenState } from "./state/pendingSessionOpen";
 
@@ -27,15 +26,6 @@ export function activate(context: vscode.ExtensionContext): void {
   const pending = new PendingSessionOpenState(context).get();
   if (cwd && pending?.cwd === cwd) {
     void vscode.commands.executeCommand(`${ChatWebviewProvider.viewType}.focus`);
-  }
-
-  try {
-    registerChatSession(context);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    vscode.window.showWarningMessage(
-      `Session Companion: chat panel integration failed to register (proposed API mismatch?): ${message}`
-    );
   }
 }
 
