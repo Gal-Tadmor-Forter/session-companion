@@ -65,9 +65,14 @@ export class AgentSession {
   private resumeSessionId: string | undefined;
   private forkSession = false;
   private knownSessionId: string | undefined;
-  /** Whether the current session's title has already been fetched, so a resumed/known
-   * chat doesn't get re-queried on every turn. Reset per `reset()` call — see there. */
+  /** Whether a title has ever been found for the current session — gates only the
+   * fast startup poll (`startTitlePolling()`), not later re-checks (see the `result`
+   * handler). Reset per `reset()` call — see there. */
   private titleKnown = false;
+  /** The last title actually sent to the webview, so a per-turn re-check only fires
+   * `sessionRenamed` when the CLI's auto-generated title genuinely changed (e.g. after
+   * a topic shift mid-session) instead of re-announcing the same one every turn. */
+  private lastKnownTitle: string | undefined;
   /** Polls for the auto-generated title while a fresh/forked chat's first turn is
    * still running — see `startTitlePolling()`. */
   private titlePollTimer: ReturnType<typeof setInterval> | undefined;
@@ -405,21 +410,23 @@ export class AgentSession {
       }
       this.onEvent({ type: "turnComplete" });
       void this.loadContextUsage();
-      if (!this.titleKnown) {
-        // One last attempt right at turn end, then give up polling — if the CLI
-        // hasn't generated a title by now, further polling won't find one until
-        // the next turn starts it fresh via `noteSessionId()`.
-        void this.loadSessionTitle().finally(() => this.stopTitlePolling());
-      }
+      // Re-checked every turn, not just until the first title is found — locking it
+      // in after one successful fetch left a long session's title stale forever if
+      // the CLI later regenerated it (e.g. after an early topic shift). Cheap (one
+      // getSessionInfo() call) and `loadSessionTitle()` itself only emits an event
+      // when the title actually changed.
+      void this.loadSessionTitle().finally(() => this.stopTitlePolling());
     } else if (message.type === "prompt_suggestion") {
       this.onEvent({ type: "promptSuggestion", text: message.suggestion });
     }
   }
 
-  /** The CLI auto-generates a session title (or falls back to the first prompt) by the
-   * time `result` fires — confirmed empirically to already be readable at that point,
-   * no polling/delay needed. One lookup per session is enough. Best-effort, like
-   * `loadContextUsage()` below: a chat still works fine without a title update. */
+  /** Fetches the CLI's current auto-generated (or user-set) title and, if it differs
+   * from the last one sent to the webview, announces it via `sessionRenamed`. Called
+   * both by the fast startup poll and once per completed turn thereafter — cheap and
+   * idempotent, so re-running it every turn just no-ops once the title stabilizes.
+   * Best-effort, like `loadContextUsage()` below: a chat still works fine without a
+   * title update. */
   private async loadSessionTitle(): Promise<void> {
     if (!this.knownSessionId) return;
     try {
@@ -428,7 +435,10 @@ export class AgentSession {
       if (info?.summary) {
         this.titleKnown = true;
         this.stopTitlePolling();
-        this.onEvent({ type: "sessionRenamed", sessionId: this.knownSessionId, title: info.summary });
+        if (info.summary !== this.lastKnownTitle) {
+          this.lastKnownTitle = info.summary;
+          this.onEvent({ type: "sessionRenamed", sessionId: this.knownSessionId, title: info.summary });
+        }
       }
     } catch {
       // best-effort
@@ -803,13 +813,16 @@ export class AgentSession {
     // old id, or heartbeat/read-state bookkeeping would target the wrong session.
     this.knownSessionId = this.forkSession ? undefined : resumeSessionId;
     // A resumed (non-forked) session already has a title, passed in when it was opened
-    // from the Sessions list — don't re-fetch it. A brand-new chat or a fork's new id
-    // needs one queried once the first turn completes. `options.titleKnown` overrides
-    // this for a resumed id that's actually brand new to the webview — the standalone
-    // `forkSession()` used by the "edit message" flow (distinct from the `fork` option
-    // above, which is `Options.forkSession` on a live resume) produces a real, already-
-    // existing session id that nonetheless has no title yet.
+    // from the Sessions list — skip only the fast startup poll for it (still gets the
+    // normal once-per-turn re-check below, same as any other session). A brand-new
+    // chat or a fork's new id has no title yet, so it does want the fast poll.
+    // `options.titleKnown` overrides this for a resumed id that's actually brand new
+    // to the webview — the standalone `forkSession()` used by the "edit message" flow
+    // (distinct from the `fork` option above, which is `Options.forkSession` on a live
+    // resume) produces a real, already-existing session id that nonetheless has no
+    // title yet.
     this.titleKnown = options?.titleKnown ?? (Boolean(resumeSessionId) && !this.forkSession);
+    this.lastKnownTitle = undefined;
     this.lastUserMessageUuid = undefined;
     this.sessionCostUsd = undefined;
     this.additionalDirectories = [];

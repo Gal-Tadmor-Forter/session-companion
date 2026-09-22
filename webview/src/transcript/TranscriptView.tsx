@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Image, FileText, Dot, Brain, Info, Minimize2, MessageSquareText, Pencil, Check, Copy, X } from "lucide-react";
+import { Image, FileText, Dot, Brain, Info, PictureInPicture2, MessageSquareText, Pencil, Check, Copy, X } from "lucide-react";
 import type { AttachmentSummary } from "../../../shared/protocol";
 import type { TranscriptItem } from "../types";
 import { Button } from "../components/Button";
@@ -264,7 +264,7 @@ export function TranscriptView({
                         onClick={() => onBackgroundTask(item.toolUseId)}
                         className="shrink-0 cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
                       >
-                        <Minimize2 size={12} />
+                        <PictureInPicture2 size={12} />
                       </button>
                     </Tooltip>
                   )}

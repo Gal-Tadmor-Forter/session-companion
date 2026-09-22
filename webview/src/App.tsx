@@ -86,6 +86,7 @@ type Action =
   | { kind: "effortSelected"; effort: EffortLevelId }
   | { kind: "attachmentRemoved"; id: string }
   | { kind: "backToSessions" }
+  | { kind: "returnedToChat" }
   | { kind: "newChatStarted" }
   | { kind: "webSearchToggled" }
   | { kind: "thinkingToggled" }
@@ -174,6 +175,13 @@ export function reducer(state: State, action: Action): State {
     }
     case "backToSessions":
       return { ...state, screen: "sessions" };
+    // Switching back to "chat" locally, with no host round-trip — used only when
+    // the session clicked is the one already live in this exact webview (see
+    // `handleOpenSession`). `state.items`/`sending` have been kept correct the
+    // whole time regardless of which screen was visible, since this webview never
+    // stopped receiving host events while showing the Sessions screen.
+    case "returnedToChat":
+      return { ...state, screen: "chat" };
     case "newChatStarted":
       return {
         ...state,
@@ -757,6 +765,19 @@ export function App() {
   };
 
   const handleOpenSession = (session: SessionListEntry) => {
+    // Clicking the chat that's already live in this exact webview (the common
+    // "Back to Sessions, then back into the same chat" flow) must not round-trip
+    // through the host's `openSession` handler — that always called
+    // `AgentSession.reset()`, which tears down the live query (`Query.return()`)
+    // and kills an in-flight turn. Confirmed as a real user report: going Back
+    // mid-response and reopening the same chat left it permanently stuck, because
+    // the turn that was still running got interrupted by the reopen itself. Just
+    // switch screens locally instead — this webview never stopped receiving live
+    // events for it while the Sessions screen was showing.
+    if (session.sessionId === state.currentSessionId) {
+      dispatch({ kind: "returnedToChat" });
+      return;
+    }
     post({ type: "openSession", sessionId: session.sessionId, cwd: session.cwd, title: session.title });
   };
 
