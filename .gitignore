@@ -1,0 +1,18 @@
+node_modules/
+dist/
+dist-ts-check/
+.vscode-test/
+*.vsix
+.DS_Store
+coverage/
+*.tsbuildinfo
+.env
+.env.local
+
+# Personal, machine-specific Claude Code settings — never shared/committed
+# (Claude Code's own "local" naming convention for this file).
+.claude/settings.local.json
+
+# Candidate-features scratchpad — deliberately not public; keep it locally
+# uncommitted if you want one.
+FEATURES_BACKLOG.md
