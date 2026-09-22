@@ -283,13 +283,13 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           }
           case "openSession": {
             const openFolderPaths = (vscode.workspace.workspaceFolders ?? []).map((f) => f.uri.fsPath);
-            // Repoints the live AgentSession at `message.cwd` and opens the session
+            // Repoints the live AgentSession at `targetCwd` and opens the session
             // inline — used both when that folder is already part of this window's
             // workspace, and when it's just been added to it (see below), so a whole
             // new window is only ever spawned as a last resort.
-            const repointAndOpen = async () => {
+            const repointAndOpen = async (targetCwd: string) => {
               session.dispose();
-              cwd = message.cwd;
+              cwd = targetCwd;
               session = buildSession(cwd);
               this.session = session;
               void applyPermissionDefaults(session, cwd);
@@ -299,20 +299,30 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             // stored in the session file at write time — it never self-corrects, so a
             // session predating a folder rename/move still reports the OLD, now-gone
             // path forever (confirmed empirically). Before treating that as a genuinely
-            // different/foreign folder, check whether the file actually resolves right
-            // here under the CURRENT window's cwd anyway — cheap, and only ever true for
-            // exactly this stale-metadata case, since a session that really belongs to a
-            // different folder won't resolve under this one.
-            const resolvesHereDespiteStaleCwd =
-              message.cwd !== cwd &&
-              (await (async () => {
-                const { getSessionInfo } = await import("@anthropic-ai/claude-agent-sdk");
-                return Boolean(await getSessionInfo(message.sessionId, { dir: cwd }).catch(() => undefined));
-              })());
-            if (message.cwd === cwd || resolvesHereDespiteStaleCwd) {
+            // different/foreign folder, check every folder already open in *this*
+            // window — not just the active `cwd` (index 0): in a multi-root workspace,
+            // the renamed folder can sit at any index, and checking only `cwd` missed
+            // that case (confirmed by a real user report — a session opened fine right
+            // after a folder rename, but broke on the next restart once the active
+            // window's `cwd` was a *different* already-open root than the renamed one,
+            // sending it down the "genuinely foreign folder" path below with a dead
+            // `message.cwd`, which then tried to spawn the CLI with a nonexistent cwd).
+            const resolveSessionFolder = async (): Promise<string | undefined> => {
+              if (message.cwd === cwd) return cwd;
+              const { getSessionInfo } = await import("@anthropic-ai/claude-agent-sdk");
+              for (const candidate of [cwd, ...openFolderPaths]) {
+                const info = await getSessionInfo(message.sessionId, { dir: candidate }).catch(() => undefined);
+                if (info) return candidate;
+              }
+              return undefined;
+            };
+            const resolvedFolder = await resolveSessionFolder();
+            if (resolvedFolder === cwd) {
               await openSessionInline(message.sessionId, message.title);
+            } else if (resolvedFolder) {
+              await repointAndOpen(resolvedFolder);
             } else if (isOpenWorkspaceFolder(message.cwd, openFolderPaths)) {
-              await repointAndOpen();
+              await repointAndOpen(message.cwd);
             } else {
               // A folder that isn't open in this window (or any window) at all — the
               // whole AgentSession is scoped to one cwd, and there's no view of it to
@@ -342,7 +352,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
                   sessionId: message.sessionId,
                   title: message.title,
                 });
-                await repointAndOpen();
+                await repointAndOpen(message.cwd);
                 await this.pendingSessionOpen.clear();
               } else {
                 // Stash which session to resume so the new window's webview can pick it
