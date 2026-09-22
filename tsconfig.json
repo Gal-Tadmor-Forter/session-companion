@@ -13,5 +13,5 @@
     "resolveJsonModule": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "webview/src/**/*", "shared/**/*", "vscode.proposed.chatSessionsProvider.d.ts"]
+  "include": ["src/**/*", "webview/src/**/*", "shared/**/*"]
 }

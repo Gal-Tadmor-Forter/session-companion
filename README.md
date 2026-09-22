@@ -178,9 +178,6 @@ just the current workspace.
     sessions).
   - `utils/` — attachments, file mentions, repo naming, session-history
     replay — pure helpers with no session lifecycle of their own.
-  - `chatPanel/` — the skeleton `chatSessionsProvider` (proposed API)
-    integration that surfaces this extension in VS Code's built-in Chat
-    panel; independent of the sidebar webview.
 - `webview/` — the React UI, bundled separately for the webview sandbox.
   - `composer/` — the message input and everything anchored to it: model
     and mode pickers, the attach menu, `@`-mention autocomplete, the `/`
@@ -223,9 +220,7 @@ npm run watch    # esbuild + Tailwind in watch mode
 ```
 
 Press `F5` in VS Code to launch an Extension Development Host with the
-extension loaded. The `chatSessionsProvider` proposed API requires running
-inside the Extension Development Host — a normal ("Install from Location")
-install will log a warning and fall back to the sidebar webview view only.
+extension loaded.
 
 ```bash
 npm run build     # production build (dist/extension.js, dist/webview/*)

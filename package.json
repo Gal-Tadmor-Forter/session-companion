@@ -12,12 +12,6 @@
   "categories": [
     "Other"
   ],
-  "enabledApiProposals": [
-    "chatSessionsProvider"
-  ],
-  "activationEvents": [
-    "onChatSession:sessionCompanion"
-  ],
   "main": "./dist/extension.js",
   "contributes": {
     "viewsContainers": {
@@ -40,30 +34,6 @@
         }
       ]
     },
-    "chatParticipants": [
-      {
-        "id": "sessionCompanion.agent",
-        "name": "session-companion",
-        "fullName": "Session Companion",
-        "description": "Skeleton Agent SDK round-trip"
-      }
-    ],
-    "chatSessions": [
-      {
-        "type": "sessionCompanion",
-        "name": "session-companion",
-        "displayName": "Session Companion",
-        "description": "Chat UI for Claude Code sessions, with cross-repo session history",
-        "icon": "$(comment-discussion)",
-        "welcomeTitle": "Session Companion",
-        "welcomeMessage": "Skeleton session — round-trips a static prompt to the Claude Agent SDK.",
-        "inputPlaceholder": "Describe what to build",
-        "capabilities": {
-          "supportsFileAttachments": false,
-          "supportsImageAttachments": false
-        }
-      }
-    ],
     "commands": [
       {
         "command": "sessionCompanion.newChat",
