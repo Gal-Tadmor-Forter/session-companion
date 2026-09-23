@@ -5,15 +5,18 @@ import {
   ArchiveRestore,
   Calendar,
   CircleHelp,
+  Filter,
   FolderTree,
   Gauge,
   Pencil,
   Settings,
   Trash2,
+  X,
 } from "lucide-react";
 import type { SessionListEntry } from "../../../shared/protocol";
 import { DATE_GROUP_ORDER, dateGroupFor, formatRelativeTime, type DateGroup } from "../utils/relativeTime";
 import { Button } from "../components/Button";
+import { Collapsible } from "../components/Collapsible";
 import { MenuItem } from "../components/MenuItem";
 import { Popover } from "../components/Popover";
 import { Spinner } from "../components/Spinner";
@@ -66,6 +69,9 @@ export function SessionsView({
   const [showArchived, setShowArchived] = useState(false);
   const [groupBy, setGroupBy] = useState<GroupBy>("date");
   const [groupByMenuOpen, setGroupByMenuOpen] = useState(false);
+  const [projectFilter, setProjectFilter] = useState<Set<string>>(new Set());
+  const [projectFilterMenuOpen, setProjectFilterMenuOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
@@ -77,15 +83,30 @@ export function SessionsView({
     setRenamingId(null);
   };
 
+  const toggleProjectFilter = (repoName: string) => {
+    setProjectFilter((prev) => {
+      const next = new Set(prev);
+      if (next.has(repoName)) next.delete(repoName);
+      else next.add(repoName);
+      return next;
+    });
+  };
+
+  const projectOptions = useMemo(() => {
+    const names = new Set(sessions.filter((s) => s.archived === showArchived).map((s) => s.repoName));
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [sessions, showArchived]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const base = sessions.filter((s) => {
       if (s.archived !== showArchived) return false;
+      if (projectFilter.size > 0 && !projectFilter.has(s.repoName)) return false;
       if (!q) return true;
       return s.title.toLowerCase().includes(q) || s.repoName.toLowerCase().includes(q);
     });
     return [...base].sort((a, b) => b.lastModified - a.lastModified);
-  }, [sessions, query, showArchived]);
+  }, [sessions, query, showArchived, projectFilter]);
 
   const groups = useMemo(() => {
     if (groupBy === "project") {
@@ -169,6 +190,45 @@ export function SessionsView({
             }}
           />
         </Popover>
+        <Popover
+          open={projectFilterMenuOpen}
+          onOpenChange={setProjectFilterMenuOpen}
+          side="bottom"
+          anchor={
+            <button
+              title="Filter by project"
+              className={
+                projectFilter.size > 0
+                  ? "cursor-pointer rounded-md p-1.5 text-accent hover:bg-surface-hover"
+                  : "cursor-pointer rounded-md p-1.5 text-muted hover:bg-surface-hover hover:text-foreground"
+              }
+              aria-label="Filter by project"
+            >
+              <Filter size={16} />
+            </button>
+          }
+        >
+          <div className="flex items-center justify-between px-2 pt-1 pb-2">
+            <span className="text-xs font-medium text-muted">Filter by project</span>
+            {projectFilter.size > 0 && (
+              <button
+                onClick={() => setProjectFilter(new Set())}
+                className="cursor-pointer text-xs text-accent hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+          {projectOptions.length === 0 && <div className="px-2 py-1 text-xs text-muted">No projects</div>}
+          {projectOptions.map((project) => (
+            <MenuItem
+              key={project}
+              label={project}
+              selected={projectFilter.has(project)}
+              onClick={() => toggleProjectFilter(project)}
+            />
+          ))}
+        </Popover>
         <Tooltip label="Usage & spend limits">
           <button
             onClick={onOpenUsage}
@@ -212,93 +272,122 @@ export function SessionsView({
         placeholder="Search sessions"
         className="w-full rounded-md border border-border bg-surface px-2 py-1 text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-accent"
       />
-      {sessions.length === 0 && (
+      {projectFilter.size > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {[...projectFilter].map((project) => (
+            <button
+              key={project}
+              onClick={() => toggleProjectFilter(project)}
+              className="flex cursor-pointer items-center gap-1 rounded-full border border-border bg-surface px-2 py-0.5 text-xs text-foreground hover:bg-surface-hover"
+            >
+              {project}
+              <X size={12} className="text-muted" />
+            </button>
+          ))}
+        </div>
+      )}
+      {filtered.length === 0 && (
         <div className="px-1 text-sm text-muted">
-          {showArchived ? "No archived sessions." : "No sessions yet. Start a chat below."}
+          {sessions.length === 0
+            ? showArchived
+              ? "No archived sessions."
+              : "No sessions yet. Start a chat below."
+            : "No sessions match your filters."}
         </div>
       )}
       {groups.map(({ key, label, sessions: groupSessions }) => (
-        <div key={key} className="flex flex-col gap-1">
-          <div className="px-1 text-xs font-medium text-muted">{label}</div>
-          {groupSessions.map((session) => (
-            <div
-              key={session.sessionId}
-              className="group flex items-center gap-1 rounded-lg px-2 py-1.5 hover:bg-surface-hover"
-            >
-              {renamingId === session.sessionId ? (
-                <input
-                  autoFocus
-                  value={renameDraft}
-                  onChange={(e) => setRenameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") commitRename(session);
-                    else if (e.key === "Escape") setRenamingId(null);
-                  }}
-                  onBlur={() => commitRename(session)}
-                  onClick={(e) => e.stopPropagation()}
-                  className="min-w-0 flex-1 rounded-md border border-border bg-surface px-1.5 py-1 text-sm text-foreground focus:outline-none"
-                />
-              ) : (
-                <button
-                  onClick={() => onOpenSession(session)}
-                  className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
-                >
-                  <div className="flex w-full items-center gap-1.5">
-                    <span
-                      className={
-                        session.active
-                          ? "h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent"
-                          : session.unread
-                            ? "h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                            : "h-1.5 w-1.5 shrink-0 rounded-full bg-muted"
-                      }
-                    />
-                    <span className="truncate text-sm font-medium text-foreground">{session.title}</span>
+        <Collapsible
+          key={key}
+          className="flex flex-col gap-1"
+          open={!collapsedGroups[key]}
+          onOpenChange={(open) => setCollapsedGroups((prev) => ({ ...prev, [key]: !open }))}
+          trigger={
+            <span className="px-1 text-xs font-medium text-muted">
+              {label} <span className="text-muted/70">· {groupSessions.length}</span>
+            </span>
+          }
+        >
+          <div className="flex flex-col gap-1 pt-1">
+            {groupSessions.map((session) => (
+              <div
+                key={session.sessionId}
+                className="group flex items-center gap-1 rounded-lg px-2 py-1.5 hover:bg-surface-hover"
+              >
+                {renamingId === session.sessionId ? (
+                  <input
+                    autoFocus
+                    value={renameDraft}
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename(session);
+                      else if (e.key === "Escape") setRenamingId(null);
+                    }}
+                    onBlur={() => commitRename(session)}
+                    onClick={(e) => e.stopPropagation()}
+                    className="min-w-0 flex-1 rounded-md border border-border bg-surface px-1.5 py-1 text-sm text-foreground focus:outline-none"
+                  />
+                ) : (
+                  <button
+                    onClick={() => onOpenSession(session)}
+                    className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
+                  >
+                    <div className="flex w-full items-center gap-1.5">
+                      <span
+                        className={
+                          session.active
+                            ? "h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-accent"
+                            : session.unread
+                              ? "h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+                              : "h-1.5 w-1.5 shrink-0 rounded-full bg-muted"
+                        }
+                      />
+                      <span className="truncate text-sm font-medium text-foreground">{session.title}</span>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-1.5 pl-3 text-xs text-muted">
+                      <span className="truncate">
+                        {groupBy === "project"
+                          ? formatRelativeTime(session.lastModified)
+                          : `${session.repoName} · ${formatRelativeTime(session.lastModified)}`}
+                      </span>
+                      {session.active && <RespondingBadge />}
+                    </div>
+                  </button>
+                )}
+                {renamingId !== session.sessionId && (
+                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                    <Tooltip label="Rename">
+                      <button
+                        onClick={() => {
+                          setRenameDraft(session.title);
+                          setRenamingId(session.sessionId);
+                        }}
+                        className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label={session.archived ? "Unarchive" : "Archive"}>
+                      <button
+                        onClick={() => onSetArchived(session.sessionId, !session.archived)}
+                        className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
+                      >
+                        {session.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Delete">
+                      <button
+                        onClick={() => onDeleteSession(session.sessionId)}
+                        className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-red-400"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </Tooltip>
                   </div>
-                  <div className="flex min-w-0 items-center gap-1.5 pl-3 text-xs text-muted">
-                    <span className="truncate">
-                      {groupBy === "project"
-                        ? formatRelativeTime(session.lastModified)
-                        : `${session.repoName} · ${formatRelativeTime(session.lastModified)}`}
-                    </span>
-                    {session.active && <RespondingBadge />}
-                  </div>
-                </button>
-              )}
-              {renamingId !== session.sessionId && (
-                <div className="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
-                  <Tooltip label="Rename">
-                    <button
-                      onClick={() => {
-                        setRenameDraft(session.title);
-                        setRenamingId(session.sessionId);
-                      }}
-                      className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
-                    >
-                      <Pencil size={14} />
-                    </button>
-                  </Tooltip>
-                  <Tooltip label={session.archived ? "Unarchive" : "Archive"}>
-                    <button
-                      onClick={() => onSetArchived(session.sessionId, !session.archived)}
-                      className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
-                    >
-                      {session.archived ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-                    </button>
-                  </Tooltip>
-                  <Tooltip label="Delete">
-                    <button
-                      onClick={() => onDeleteSession(session.sessionId)}
-                      className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-red-400"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  </Tooltip>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Collapsible>
       ))}
       {hasMore && (
         <Button variant="ghost" size="sm" onClick={onLoadMore}>
