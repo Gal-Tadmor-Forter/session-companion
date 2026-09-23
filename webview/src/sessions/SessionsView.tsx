@@ -3,7 +3,22 @@ import { RefreshCw, Archive, ArchiveRestore, CircleHelp, Gauge, Pencil, Settings
 import type { SessionListEntry } from "../../../shared/protocol";
 import { DATE_GROUP_ORDER, dateGroupFor, formatRelativeTime, type DateGroup } from "../utils/relativeTime";
 import { Button } from "../components/Button";
+import { Spinner } from "../components/Spinner";
 import { Tooltip } from "../components/Tooltip";
+import { useThinkingVerb } from "../utils/thinkingVerbs";
+
+// A separate component (rather than calling the hook inline in the sessions .map below)
+// so each active session gets its own independently-ticking verb without breaking the
+// Rules of Hooks — only ever mounted while `session.active`, so `active` is always true.
+function RespondingBadge() {
+  const verb = useThinkingVerb(true);
+  return (
+    <span className="flex shrink-0 items-center gap-1 text-accent">
+      <Spinner />
+      {verb}…
+    </span>
+  );
+}
 
 interface SessionsViewProps {
   sessions: SessionListEntry[];
@@ -172,14 +187,11 @@ export function SessionsView({
                     />
                     <span className="truncate text-sm font-medium text-foreground">{session.title}</span>
                   </div>
-                  <div className="pl-3 text-xs text-muted">
-                    {session.active ? (
-                      <span className="text-accent">Responding…</span>
-                    ) : (
-                      <>
-                        {session.repoName} · {formatRelativeTime(session.lastModified)}
-                      </>
-                    )}
+                  <div className="flex min-w-0 items-center gap-1.5 pl-3 text-xs text-muted">
+                    <span className="truncate">
+                      {session.repoName} · {formatRelativeTime(session.lastModified)}
+                    </span>
+                    {session.active && <RespondingBadge />}
                   </div>
                 </button>
               )}

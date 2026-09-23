@@ -6,6 +6,12 @@ export type EffortLevelId = "low" | "medium" | "high" | "xhigh" | "max";
  * the current turn first. Omitted when nothing is in progress. */
 export type MessageDeliveryMode = "queue" | "steer" | "stopAndSend";
 
+/** How long a "steer" message sits cancellable/editable (see `AgentSession.sendMessage`)
+ * before it's auto-flushed to the model — shared so the webview's countdown badge
+ * (TranscriptView) can't drift from the host's actual deadline. A "queue" message has no
+ * fixed window instead: it's held until the currently-running turn finishes. */
+export const STEER_ABORT_WINDOW_MS = 3000;
+
 export interface ModelOption {
   value: string;
   displayName: string;
@@ -257,6 +263,12 @@ export type HostToWebviewMessage =
   /** At most one per turn, arrives after the turn's result. Predicted next
    * user message — piggybacks on the prompt cache, so it's near-free. */
   | { type: "promptSuggestion"; text: string }
+  /** Fired the moment a message is actually handed off to the SDK's input queue —
+   * immediately for a plain/steer/stopAndSend send, but only once the previously-running
+   * turn finishes for a "queue" send (see `AgentSession.flushNextQueued()`). Lets the
+   * webview know exactly when a message stops being "pending" (see `cancelQueuedMessage`/
+   * `editQueuedMessage` below), rather than guessing from turn-boundary events. */
+  | { type: "queuedMessageSent"; uuid: string }
   /** Echoes back the SDK-effective permission mode after a change that needs host-side
    * confirmation first (currently just bypassPermissions) — decoupled from the optimistic
    * local update the webview does for every other mode, so a cancelled confirmation
@@ -291,6 +303,16 @@ export type WebviewToHostMessage =
    * explicit Fork action. Text-only: an edited message's original attachments (if any)
    * aren't resent. */
   | { type: "editMessage"; uuid: string; newText: string; currentTitle?: string }
+  /** Cancels a message sent with `deliveryMode: "queue"` while it's still held back
+   * (i.e. before the currently-running turn finishes and it's actually handed to the
+   * model) — a no-op if it's already been sent (`queuedMessageSent` already fired for
+   * it). Only meaningful for "queue": "steer"/"stopAndSend" are pushed to the model
+   * immediately, so there's no window to cancel them from. */
+  | { type: "cancelQueuedMessage"; uuid: string }
+  /** Edits the text of a still-held-back "queue" message in place — same no-op-if-
+   * already-sent caveat as `cancelQueuedMessage`. Unlike `editMessage`, this never
+   * forks/regenerates: the message hasn't been sent yet, so there's nothing to rewind. */
+  | { type: "editQueuedMessage"; uuid: string; newText: string }
   | { type: "renameSession"; sessionId: string; cwd?: string; title: string }
   | { type: "attachFiles" }
   | { type: "attachDroppedFile"; fileName: string; base64Data: string }

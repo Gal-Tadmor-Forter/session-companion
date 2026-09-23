@@ -26,12 +26,26 @@ import type {
   PermissionModeId,
   SlashCommandEntry,
 } from "../../shared/protocol";
+import { STEER_ABORT_WINDOW_MS } from "../../shared/protocol";
 import type { McpServerConfig } from "@anthropic-ai/claude-agent-sdk";
 
 const WEB_TOOLS = ["WebSearch", "WebFetch"];
 
 interface PendingPermission {
   resolve: (result: PermissionResult) => void;
+}
+
+/** A "queue" or "steer" send held back from the SDK's input queue — see
+ * `AgentSession.sendMessage()`. "queue" is flushed once the currently-running turn
+ * finishes (`flushNextQueued()`); "steer" is flushed after `STEER_ABORT_WINDOW_MS` by
+ * `autoFlushTimer` unless cancelled/edited-and-kept first. Not used for "stopAndSend"/
+ * plain sends, which are pushed to the model immediately. */
+interface QueuedOutboundMessage {
+  text: string;
+  attachments: StagedAttachment[];
+  uuid: string;
+  deliveryMode: "queue" | "steer";
+  autoFlushTimer?: ReturnType<typeof setTimeout>;
 }
 
 function summarizeToolResultContent(content: unknown): string {
@@ -54,6 +68,11 @@ function summarizeToolResultContent(content: unknown): string {
 
 export class AgentSession {
   private inputQueue = new AsyncQueue<SDKUserMessage>();
+  /** "queue" sends held back until the currently-running turn finishes — a `Map` so a
+   * cancel/edit can look one up by uuid in O(1) while still flushing in the order they
+   * were queued (insertion order, per `Map`'s iteration guarantee). See `sendMessage()`
+   * and `flushNextQueued()`. */
+  private readonly pendingOutbox = new Map<string, QueuedOutboundMessage>();
   private query: Query | undefined;
   private readonly pendingPermissions = new Map<string, PendingPermission>();
   private permissionMode: PermissionMode = "default";
@@ -409,6 +428,7 @@ export class AgentSession {
         });
       }
       this.onEvent({ type: "turnComplete" });
+      this.flushNextQueued();
       void this.loadContextUsage();
       // Re-checked every turn, not just until the first title is found — locking it
       // in after one successful fetch left a long session's title stale forever if
@@ -574,6 +594,35 @@ export class AgentSession {
     // assistant reply when the sent message itself carries a `uuid` — undocumented
     // in SDKUserMessage's public type but confirmed to work at runtime.
     this.lastUserMessageUuid = uuid;
+
+    if (deliveryMode === "queue" || deliveryMode === "steer") {
+      // Held back rather than pushed to `inputQueue` right away — the SDK gives no way
+      // to peek/remove/edit an item already handed to it (confirmed: `AsyncQueue` is a
+      // bare FIFO, and a "later"/"now"-priority item can be pulled into the SDK's own
+      // internal reorder buffer as soon as it's pushed). Buffering it here instead is
+      // what makes `cancelQueuedMessage`/`editQueuedMessage` possible.
+      //
+      // "queue" is flushed one at a time by `flushNextQueued()` (called from the `result`
+      // handler below) once the currently-running turn finishes. "steer" instead gets a
+      // fixed `STEER_ABORT_WINDOW_MS` undo window — it's meant to fold into the turn
+      // that's running *right now*, so it can't wait for a turn boundary like "queue"
+      // does; the tradeoff is it delays the actual steering effect by that window.
+      const entry: QueuedOutboundMessage = { text, attachments, uuid, deliveryMode };
+      if (deliveryMode === "steer") {
+        entry.autoFlushTimer = setTimeout(() => this.flushQueuedMessage(uuid), STEER_ABORT_WINDOW_MS);
+      }
+      this.pendingOutbox.set(uuid, entry);
+      return;
+    }
+    this.pushToInputQueue(uuid, text, attachments, deliveryMode);
+  }
+
+  private pushToInputQueue(
+    uuid: string,
+    text: string,
+    attachments: StagedAttachment[],
+    deliveryMode?: MessageDeliveryMode
+  ): void {
     const priority = AgentSession.priorityFor(deliveryMode);
     if (attachments.length === 0) {
       this.inputQueue.push({
@@ -583,6 +632,7 @@ export class AgentSession {
         uuid,
         priority,
       } as SDKUserMessage);
+      this.onEvent({ type: "queuedMessageSent", uuid });
       return;
     }
     // Images before text performs better per platform.claude.com/docs/en/build-with-claude/vision.
@@ -608,6 +658,61 @@ export class AgentSession {
       uuid,
       priority,
     } as SDKUserMessage);
+    this.onEvent({ type: "queuedMessageSent", uuid });
+  }
+
+  /** Discards every still-held-back message (and their "steer" auto-flush timers, if
+   * any) without sending them — used when a session resets to a different chat, since
+   * a buffered send belongs to the conversation it was typed into. */
+  private clearPendingOutbox(): void {
+    for (const msg of this.pendingOutbox.values()) {
+      if (msg.autoFlushTimer) clearTimeout(msg.autoFlushTimer);
+    }
+    this.pendingOutbox.clear();
+  }
+
+  /** Flushes a single held-back message to the SDK's input queue, however it got
+   * triggered (turn boundary for "queue", timer for "steer"). */
+  private flushQueuedMessage(uuid: string): void {
+    const msg = this.pendingOutbox.get(uuid);
+    if (!msg) return;
+    this.pendingOutbox.delete(uuid);
+    this.pushToInputQueue(uuid, msg.text, msg.attachments, msg.deliveryMode);
+  }
+
+  /** Flushes the oldest still-held-back "queue" message, if any — called once per
+   * completed turn (see the `result` handler), so several queued messages are handed
+   * off one at a time, each staying cancellable/editable until its own turn is about to
+   * start rather than all becoming un-cancellable the moment the currently-running turn
+   * ends. Ignores "steer" entries — those flush on their own timer regardless of turn
+   * boundaries (see `sendMessage`). */
+  private flushNextQueued(): void {
+    for (const [uuid, msg] of this.pendingOutbox) {
+      if (msg.deliveryMode === "queue") {
+        this.flushQueuedMessage(uuid);
+        return;
+      }
+    }
+  }
+
+  /** Cancels a still-held-back "queue" or "steer" message — a no-op (returns false) if
+   * it's already been flushed to the model. */
+  cancelQueuedMessage(uuid: string): boolean {
+    const msg = this.pendingOutbox.get(uuid);
+    if (!msg) return false;
+    if (msg.autoFlushTimer) clearTimeout(msg.autoFlushTimer);
+    this.pendingOutbox.delete(uuid);
+    return true;
+  }
+
+  /** Edits the text of a still-held-back "queue" or "steer" message in place — same
+   * no-op-if-already-sent caveat as `cancelQueuedMessage`. Doesn't reset a "steer"
+   * message's abort-window countdown; only its text changes. */
+  editQueuedMessage(uuid: string, newText: string): boolean {
+    const existing = this.pendingOutbox.get(uuid);
+    if (!existing) return false;
+    this.pendingOutbox.set(uuid, { ...existing, text: newText });
+    return true;
   }
 
   async interrupt(): Promise<void> {
@@ -806,6 +911,7 @@ export class AgentSession {
   reset(resumeSessionId?: string, options?: { fork?: boolean; titleKnown?: boolean }): void {
     this.stopCurrent();
     this.inputQueue = new AsyncQueue<SDKUserMessage>();
+    this.clearPendingOutbox();
     this.resumeSessionId = resumeSessionId;
     this.forkSession = Boolean(options?.fork);
     // A fork's real session id differs from the one it resumed from and isn't known
@@ -830,6 +936,7 @@ export class AgentSession {
 
   dispose(): void {
     this.stopCurrent();
+    this.clearPendingOutbox();
   }
 
   private stopCurrent(): void {

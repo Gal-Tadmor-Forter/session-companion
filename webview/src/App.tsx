@@ -4,6 +4,7 @@ import { vscodeApi } from "./lib/vscodeApi";
 import { TranscriptView } from "./transcript/TranscriptView";
 import { SessionsView } from "./sessions/SessionsView";
 import { Composer } from "./composer/Composer";
+import { Spinner } from "./components/Spinner";
 import { HelpDialog } from "./dialogs/HelpDialog";
 import { AttachmentPreviewDialog } from "./dialogs/AttachmentPreviewDialog";
 import { UsageDialog } from "./dialogs/UsageDialog";
@@ -14,6 +15,7 @@ import { describeToolUse } from "./utils/toolLabel";
 import { buildTranscriptFromReplay } from "./utils/replay";
 import { transcriptToMarkdown } from "./utils/exportTranscript";
 import { findMatchingItemIds } from "./utils/transcriptSearch";
+import { useThinkingVerb } from "./utils/thinkingVerbs";
 import type { TranscriptItem } from "./types";
 import type {
   AccountInfoResult,
@@ -78,7 +80,16 @@ interface State {
 }
 
 type Action =
-  | { kind: "userSubmitted"; text: string; attachments: AttachmentSummary[]; startNewChat: boolean; uuid: string }
+  | {
+      kind: "userSubmitted";
+      text: string;
+      attachments: AttachmentSummary[];
+      startNewChat: boolean;
+      uuid: string;
+      deliveryMode?: MessageDeliveryMode;
+    }
+  | { kind: "queuedMessageEdited"; uuid: string; newText: string }
+  | { kind: "queuedMessageCancelled"; uuid: string }
   | { kind: "hostMessage"; message: HostToWebviewMessage }
   | { kind: "permissionDecided"; requestId: string; approve: boolean }
   | { kind: "modelSelected"; model: string }
@@ -158,6 +169,11 @@ export function reducer(state: State, action: Action): State {
         attachments: action.attachments,
         timestamp: Date.now(),
         uuid: action.uuid,
+        // "queue"/"steer" are held back (see `AgentSession.sendMessage`/
+        // `flushNextQueued`) until the host confirms with `queuedMessageSent`.
+        pending:
+          action.deliveryMode === "queue" || action.deliveryMode === "steer" ? true : undefined,
+        deliveryMode: action.deliveryMode,
       };
       return {
         ...state,
@@ -201,6 +217,18 @@ export function reducer(state: State, action: Action): State {
         currentSessionTitle: undefined,
         contextUsage: undefined,
         promptSuggestion: undefined,
+      };
+    case "queuedMessageEdited":
+      return {
+        ...state,
+        items: state.items.map((item) =>
+          item.kind === "user" && item.uuid === action.uuid ? { ...item, text: action.newText } : item
+        ),
+      };
+    case "queuedMessageCancelled":
+      return {
+        ...state,
+        items: state.items.filter((item) => !(item.kind === "user" && item.uuid === action.uuid)),
       };
     case "editMessageStarted":
       // Items aren't touched here — the host replaces the whole transcript wholesale
@@ -523,6 +551,13 @@ export function reducer(state: State, action: Action): State {
           return { ...state, pendingMentionInserts: [...state.pendingMentionInserts, message.result] };
         case "contextUsageLoaded":
           return { ...state, contextUsage: message.usage };
+        case "queuedMessageSent":
+          return {
+            ...state,
+            items: state.items.map((item) =>
+              item.kind === "user" && item.uuid === message.uuid ? { ...item, pending: false } : item
+            ),
+          };
         case "sessionOpened":
           return {
             ...state,
@@ -551,6 +586,7 @@ function post(message: WebviewToHostMessage): void {
 
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState);
+  const thinkingVerb = useThinkingVerb(state.waitingForFirstEvent);
   const [helpOpen, setHelpOpen] = useState(false);
   const [usageDialogOpen, setUsageDialogOpen] = useState(false);
   const [filesChangedOpen, setFilesChangedOpen] = useState(false);
@@ -667,8 +703,18 @@ export function App() {
       .filter((id): id is string => id !== undefined);
     const startNewChat = state.screen === "sessions";
     const uuid = crypto.randomUUID();
-    dispatch({ kind: "userSubmitted", text, attachments: state.pendingAttachments, startNewChat, uuid });
+    dispatch({ kind: "userSubmitted", text, attachments: state.pendingAttachments, startNewChat, uuid, deliveryMode });
     post({ type: "sendMessage", text, attachmentIds, startNewChat, deliveryMode, uuid });
+  };
+
+  const handleEditQueuedMessage = (uuid: string, newText: string) => {
+    dispatch({ kind: "queuedMessageEdited", uuid, newText });
+    post({ type: "editQueuedMessage", uuid, newText });
+  };
+
+  const handleCancelQueuedMessage = (uuid: string) => {
+    dispatch({ kind: "queuedMessageCancelled", uuid });
+    post({ type: "cancelQueuedMessage", uuid });
   };
 
   const handleStop = () => {
@@ -1074,13 +1120,14 @@ export function App() {
               onEditMessage={handleEditMessage}
               editDisabled={state.sending}
               onCopy={handleCopyText}
+              onEditQueuedMessage={handleEditQueuedMessage}
+              onCancelQueuedMessage={handleCancelQueuedMessage}
             />
             {state.waitingForFirstEvent && (
               <div className="mt-3 flex justify-start">
-                <div className="flex items-center gap-1 rounded-2xl rounded-tl-sm bg-surface px-3 py-2.5">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted" />
+                <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm bg-surface px-3 py-2.5 text-sm text-muted">
+                  <Spinner />
+                  <span>{thinkingVerb}…</span>
                 </div>
               </div>
             )}
@@ -1117,6 +1164,7 @@ export function App() {
           {state.promptSuggestion}
         </button>
       )}
+      {state.screen === "chat" && (
       <Composer
         sending={state.sending}
         models={state.models}
@@ -1175,9 +1223,10 @@ export function App() {
         onReloadPlugins={handleReloadPlugins}
         onOpenClaudeInTerminal={handleOpenClaudeInTerminal}
         onOpenExternalUrl={handleOpenExternalUrl}
-        contextUsage={state.screen === "chat" ? state.contextUsage : undefined}
+        contextUsage={state.contextUsage}
         onCompact={handleCompact}
       />
+      )}
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onOpenExternalUrl={handleOpenExternalUrl} />
       <AttachmentPreviewDialog attachment={previewAttachment} onClose={() => setPreviewAttachment(undefined)} />
       <UsageDialog
