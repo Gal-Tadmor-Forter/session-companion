@@ -318,7 +318,16 @@ export type WebviewToHostMessage =
   | { type: "attachDroppedFile"; fileName: string; base64Data: string }
   | { type: "resolveWorkspacePath"; absolutePath: string }
   | { type: "removeAttachment"; id: string }
-  | { type: "permissionDecision"; requestId: string; approve: boolean }
+  | {
+      type: "permissionDecision";
+      requestId: string;
+      approve: boolean;
+      /** For a tool like AskUserQuestion that reads its answer back from
+       * `PermissionResult.updatedInput` (its own schema documents `answers` as
+       * "collected by the permission component") — ignored for `approve: false`, and
+       * for any tool that doesn't read anything back from it. */
+      updatedInput?: Record<string, unknown>;
+    }
   | { type: "setPermissionMode"; mode: PermissionModeId }
   /** Requests switching to bypassPermissions specifically — routed through a host-side
    * confirmation dialog (see webviewProvider.ts) rather than applied optimistically like

@@ -70,6 +70,13 @@ export type TranscriptItem =
       label: string;
       description?: string;
       resolution?: "approved" | "denied";
+      /** The tool call's raw input — carried through so a tool-specific renderer (e.g.
+       * AskUserQuestion's question/options UI, see TranscriptView) has something to
+       * parse instead of falling back to a bare Approve/Deny. */
+      input: Record<string, unknown>;
+      /** Only set once an AskUserQuestion is answered — question text mapped to the
+       * picked option(s), kept for display instead of a generic "Approved" line. */
+      answers?: Record<string, string>;
     }
   | { id: string; kind: "error"; message: string }
   | {

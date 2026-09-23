@@ -220,7 +220,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             attachmentStore.remove(message.id);
             break;
           case "permissionDecision":
-            session.resolvePermission(message.requestId, message.approve);
+            session.resolvePermission(message.requestId, message.approve, message.updatedInput);
             break;
           case "setPermissionMode":
             await session.setPermissionMode(message.mode);

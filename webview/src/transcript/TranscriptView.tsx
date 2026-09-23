@@ -14,7 +14,7 @@ import { formatTokenCount } from "../utils/formatTokenCount";
 
 interface TranscriptViewProps {
   items: TranscriptItem[];
-  onPermissionDecision: (requestId: string, approve: boolean) => void;
+  onPermissionDecision: (requestId: string, approve: boolean, updatedInput?: Record<string, unknown>) => void;
   onBackgroundTask: (toolUseId: string) => void;
   onPreviewAttachment: (attachment: AttachmentSummary) => void;
   onEditMessage: (uuid: string, newText: string) => void;
@@ -32,6 +32,102 @@ interface TranscriptViewProps {
 function summarize(text: string, maxLength = 80): string {
   const flat = text.replace(/\s+/g, " ").trim();
   return flat.length > maxLength ? `${flat.slice(0, maxLength)}…` : flat;
+}
+
+interface AskUserQuestionOption {
+  label: string;
+  description: string;
+}
+
+interface AskUserQuestionEntry {
+  question: string;
+  header: string;
+  multiSelect: boolean;
+  options: AskUserQuestionOption[];
+}
+
+/** Defensively parses an AskUserQuestion tool call's `input.questions` — falls back to
+ * `undefined` (plain Approve/Deny) on anything unexpected rather than risk rendering a
+ * broken picker for a shape this hasn't seen before. */
+function parseAskUserQuestions(input: Record<string, unknown>): AskUserQuestionEntry[] | undefined {
+  const questions = input.questions;
+  if (!Array.isArray(questions) || questions.length === 0) return undefined;
+  const parsed: AskUserQuestionEntry[] = [];
+  for (const q of questions) {
+    if (!q || typeof q !== "object") return undefined;
+    const { question, header, multiSelect, options } = q as Record<string, unknown>;
+    if (typeof question !== "string" || typeof header !== "string" || !Array.isArray(options)) return undefined;
+    const parsedOptions: AskUserQuestionOption[] = [];
+    for (const opt of options) {
+      if (!opt || typeof opt !== "object") return undefined;
+      const { label, description } = opt as Record<string, unknown>;
+      if (typeof label !== "string" || typeof description !== "string") return undefined;
+      parsedOptions.push({ label, description });
+    }
+    if (parsedOptions.length === 0) return undefined;
+    parsed.push({ question, header, multiSelect: multiSelect === true, options: parsedOptions });
+  }
+  return parsed;
+}
+
+function AskUserQuestionCard({
+  questions,
+  onSubmit,
+}: {
+  questions: AskUserQuestionEntry[];
+  onSubmit: (answers: Record<string, string>) => void;
+}) {
+  const [selections, setSelections] = useState<Record<string, string[]>>({});
+  const toggleOption = (entry: AskUserQuestionEntry, label: string) => {
+    setSelections((prev) => {
+      const current = prev[entry.question] ?? [];
+      if (!entry.multiSelect) {
+        return { ...prev, [entry.question]: [label] };
+      }
+      const next = current.includes(label) ? current.filter((l) => l !== label) : [...current, label];
+      return { ...prev, [entry.question]: next };
+    });
+  };
+  const allAnswered = questions.every((q) => (selections[q.question]?.length ?? 0) > 0);
+  const submit = () => {
+    const answers: Record<string, string> = {};
+    for (const q of questions) {
+      answers[q.question] = (selections[q.question] ?? []).join(", ");
+    }
+    onSubmit(answers);
+  };
+  return (
+    <div className="mt-2.5 flex flex-col gap-3">
+      {questions.map((entry) => (
+        <div key={entry.question} className="flex flex-col gap-1.5">
+          <div className="text-xs font-medium text-foreground">{entry.question}</div>
+          <div className="flex flex-wrap gap-1.5">
+            {entry.options.map((opt) => {
+              const selected = (selections[entry.question] ?? []).includes(opt.label);
+              return (
+                <Tooltip key={opt.label} label={opt.description}>
+                  <button
+                    onClick={() => toggleOption(entry, opt.label)}
+                    className={cn(
+                      "cursor-pointer rounded-md border px-2 py-1 text-xs",
+                      selected
+                        ? "border-accent bg-accent/20 text-accent"
+                        : "border-border text-muted hover:text-foreground"
+                    )}
+                  >
+                    {opt.label}
+                  </button>
+                </Tooltip>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      <Button size="sm" onClick={submit} disabled={!allAnswered} className="self-start">
+        <Check size={13} /> Submit
+      </Button>
+    </div>
+  );
 }
 
 export function TranscriptView({
@@ -385,7 +481,12 @@ export function TranscriptView({
                 </span>
               </div>
             );
-          case "permission":
+          case "permission": {
+            // AskUserQuestion needs its answer fed back through the same permission
+            // gate (see `resolvePermission`'s doc comment) rather than a bare
+            // allow/deny, so it gets its own picker UI instead of the generic buttons.
+            const questions =
+              item.toolName === "AskUserQuestion" ? parseAskUserQuestions(item.input) : undefined;
             return (
               <div
                 key={item.id} id={item.id}
@@ -394,9 +495,24 @@ export function TranscriptView({
                 <div className="font-medium text-foreground">{item.label}</div>
                 {item.description && <div className="mt-1 text-xs text-muted">{item.description}</div>}
                 {item.resolution ? (
-                  <div className="mt-2 text-xs italic text-muted">
-                    {item.resolution === "approved" ? "Approved" : "Denied"}
-                  </div>
+                  item.answers ? (
+                    <div className="mt-2 flex flex-col gap-0.5 text-xs text-muted">
+                      {Object.entries(item.answers).map(([question, answer]) => (
+                        <div key={question} className="italic">
+                          {question} <span className="text-foreground not-italic">— {answer}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-2 text-xs italic text-muted">
+                      {item.resolution === "approved" ? "Approved" : "Denied"}
+                    </div>
+                  )
+                ) : questions ? (
+                  <AskUserQuestionCard
+                    questions={questions}
+                    onSubmit={(answers) => onPermissionDecision(item.requestId, true, { answers })}
+                  />
                 ) : (
                   <div className="mt-2.5 flex gap-2">
                     <Button size="sm" onClick={() => onPermissionDecision(item.requestId, true)}>
@@ -413,6 +529,7 @@ export function TranscriptView({
                 )}
               </div>
             );
+          }
           case "error":
             return (
               <div key={item.id} id={item.id} className="rounded-lg border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">

@@ -91,7 +91,7 @@ type Action =
   | { kind: "queuedMessageEdited"; uuid: string; newText: string }
   | { kind: "queuedMessageCancelled"; uuid: string }
   | { kind: "hostMessage"; message: HostToWebviewMessage }
-  | { kind: "permissionDecided"; requestId: string; approve: boolean }
+  | { kind: "permissionDecided"; requestId: string; approve: boolean; answers?: Record<string, string> }
   | { kind: "modelSelected"; model: string }
   | { kind: "permissionModeSelected"; mode: PermissionModeId }
   | { kind: "effortSelected"; effort: EffortLevelId }
@@ -276,7 +276,7 @@ export function reducer(state: State, action: Action): State {
         ...state,
         items: state.items.map((item) =>
           item.kind === "permission" && item.requestId === action.requestId
-            ? { ...item, resolution: action.approve ? "approved" : "denied" }
+            ? { ...item, resolution: action.approve ? "approved" : "denied", answers: action.answers }
             : item
         ),
       };
@@ -409,6 +409,7 @@ export function reducer(state: State, action: Action): State {
                 toolName: message.toolName,
                 label: message.title ?? `Allow ${message.toolName}?`,
                 description: message.description,
+                input: message.input,
               },
             ],
           };
@@ -764,9 +765,17 @@ export function App() {
     post({ type: "removeAttachment", id });
   };
 
-  const handlePermissionDecision = (requestId: string, approve: boolean) => {
-    dispatch({ kind: "permissionDecided", requestId, approve });
-    post({ type: "permissionDecision", requestId, approve });
+  const handlePermissionDecision = (
+    requestId: string,
+    approve: boolean,
+    updatedInput?: Record<string, unknown>
+  ) => {
+    const answers =
+      updatedInput && typeof updatedInput.answers === "object" && updatedInput.answers !== null
+        ? (updatedInput.answers as Record<string, string>)
+        : undefined;
+    dispatch({ kind: "permissionDecided", requestId, approve, answers });
+    post({ type: "permissionDecision", requestId, approve, updatedInput });
   };
 
   const handleModelChange = (model: string) => {
