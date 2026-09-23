@@ -285,7 +285,7 @@ export function TranscriptView({
                         ))}
                       </div>
                     )}
-                    <Markdown text={item.text} onAccent />
+                    <Markdown text={item.text} onAccent onCopyCode={onCopy} />
                   </div>
                 </div>
                 {item.pending ? (
@@ -308,7 +308,7 @@ export function TranscriptView({
               <div key={item.id} id={item.id} className="group flex flex-col items-start">
                 <div className="flex max-w-[90%] min-w-0 items-start gap-1">
                   <div className="min-w-0 rounded-2xl rounded-tl-sm bg-surface px-3 py-2 text-foreground">
-                    <Markdown text={item.text} />
+                    <Markdown text={item.text} onCopyCode={onCopy} />
                     {item.streaming && <span className="animate-pulse text-accent">▍</span>}
                   </div>
                   {!item.streaming && item.text.trim().length > 0 && (

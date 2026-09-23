@@ -69,13 +69,33 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     });
 
     const extensionConfig = vscode.workspace.getConfiguration(EXTENSION_CONFIG_SECTION);
-    // Factored out so `openSession` can rebuild the live session pointed at a different
-    // folder — one already open in this same multi-root workspace — instead of always
-    // treating "not the current cwd" as "spawn a whole new window".
-    const buildSession = (forCwd: string): AgentSession =>
-      new AgentSession(
+
+    // Holds a session that was still generating a response when the webview's focus
+    // switched away from it (see `ensureFocusSession`) — kept alive to finish naturally
+    // instead of being killed mid-turn, and disposed once its own `turnComplete`/
+    // `agentError` fires (see `buildSession`'s event callback below). Also disposed
+    // wholesale if the webview itself closes first (see `onDidDispose`).
+    const backgroundedSessions = new Set<AgentSession>();
+
+    // Factored out so `openSession`/`ensureFocusSession` can rebuild the live session
+    // pointed at a different folder — one already open in this same multi-root
+    // workspace — instead of always treating "not the current cwd" as "spawn a whole
+    // new window".
+    const buildSession = (forCwd: string): AgentSession => {
+      const agent: AgentSession = new AgentSession(
         forCwd,
         (event) => {
+          if (agent !== session) {
+            // Superseded by a focus switch — if it's here because it was still busy
+            // (see `ensureFocusSession`), let it finish naturally and clean itself up
+            // once its turn ends, rather than leaking its events into whichever
+            // session the webview is actually showing right now.
+            if (event.type === "turnComplete" || event.type === "agentError") {
+              backgroundedSessions.delete(agent);
+              agent.dispose();
+            }
+            return;
+          }
           this.post(webviewView.webview, event);
           this.notifyIfBackgrounded(webviewView, event);
           if (event.type === "mcpAuthUrlOpened") {
@@ -90,11 +110,38 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           maxTurns: extensionConfig.get<number>("maxTurns", 0),
         }
       );
+      return agent;
+    };
 
     let cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? process.cwd();
     let session = buildSession(cwd);
     const attachmentStore = new AttachmentStore();
     this.session = session;
+
+    /** Returns the AgentSession the webview should now focus/drive for `forCwd` —
+     * reuses `session` in place when it's idle (cheap, no extra process), but when it's
+     * still generating a response, leaves it completely alone to finish in the
+     * background (see `backgroundedSessions` above) and hands back a fresh instance
+     * instead of killing it. This is the fix for a real bug report: navigating
+     * back-and-forth between two chats that were both actively responding used to cut
+     * one of them off, because switching focus unconditionally reset()/disposed()
+     * whatever was currently live. */
+    const ensureFocusSession = (forCwd: string): AgentSession => {
+      const busy = session.isBusy();
+      if (!busy && forCwd === cwd) {
+        return session;
+      }
+      if (busy) {
+        backgroundedSessions.add(session);
+      } else {
+        session.dispose();
+      }
+      cwd = forCwd;
+      session = buildSession(cwd);
+      this.session = session;
+      void applyPermissionDefaults(session, cwd);
+      return session;
+    };
     // Read from `requestBypassPermissions`'s guard below — kept in sync with whatever
     // `applyPermissionDefaults` most recently resolved for the *current* `session`.
     let bypassPermissionsDisabled = false;
@@ -123,7 +170,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     };
     void applyPermissionDefaults(session, cwd);
 
-    const openSessionInline = async (sessionId: string, title: string) => {
+    // Posts the replay for a session that's already been reset() onto whichever
+    // AgentSession is now current — split out from `openSessionInline` so
+    // `reloadStaleChat` can force a hard reset on the CURRENT session (bypassing
+    // `ensureFocusSession`'s busy-check on purpose — see that case below) while still
+    // sharing this replay logic.
+    const postSessionReplay = async (sessionId: string, title: string) => {
       const { getSessionMessages } = await import("@anthropic-ai/claude-agent-sdk");
       const history = await getSessionMessages(sessionId, { dir: cwd });
       // Snapshot the real last-activity time from the (system-message-free) history
@@ -134,7 +186,6 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       if (lastActivity !== undefined) {
         await this.lastActivityOverride.set(sessionId, lastActivity);
       }
-      session.reset(sessionId);
       await this.readState.markViewed(sessionId);
       this.post(webviewView.webview, {
         type: "sessionOpened",
@@ -147,8 +198,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
       void session.warmStart();
     };
 
+    const openSessionInline = async (sessionId: string, title: string, forCwd: string = cwd) => {
+      session = ensureFocusSession(forCwd);
+      session.reset(sessionId);
+      await postSessionReplay(sessionId, title);
+    };
+
     webviewView.onDidDispose(() => {
       session.dispose();
+      for (const backgrounded of backgroundedSessions) {
+        backgrounded.dispose();
+      }
+      backgroundedSessions.clear();
       if (this.session === session) {
         this.session = undefined;
       }
@@ -159,6 +220,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
         switch (message.type) {
           case "sendMessage": {
             if (message.startNewChat) {
+              session = ensureFocusSession(cwd);
               session.reset();
             }
             await session.sendMessage(
@@ -306,14 +368,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             // Repoints the live AgentSession at `targetCwd` and opens the session
             // inline — used both when that folder is already part of this window's
             // workspace, and when it's just been added to it (see below), so a whole
-            // new window is only ever spawned as a last resort.
+            // new window is only ever spawned as a last resort. `openSessionInline`'s
+            // `ensureFocusSession` call handles the actual repointing (and the
+            // busy-check that decides whether the outgoing session gets killed or
+            // backgrounded), so this just forwards the target cwd to it.
             const repointAndOpen = async (targetCwd: string) => {
-              session.dispose();
-              cwd = targetCwd;
-              session = buildSession(cwd);
-              this.session = session;
-              void applyPermissionDefaults(session, cwd);
-              await openSessionInline(message.sessionId, message.title);
+              await openSessionInline(message.sessionId, message.title, targetCwd);
             };
             // `message.cwd` comes from `listSessions()`, which reports whatever cwd was
             // stored in the session file at write time — it never self-corrects, so a
@@ -401,11 +461,18 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             break;
           }
           case "newChat":
+            session = ensureFocusSession(cwd);
             session.reset();
             void session.warmStart();
             break;
           case "reloadStaleChat":
-            await openSessionInline(message.sessionId, message.title);
+            // Force-resets the CURRENT session regardless of isBusy() — this is the
+            // explicit "recover a stuck chat" action, and a hung session's heartbeat can
+            // still look "running" (the interval keeps firing even if the underlying
+            // process is wedged), so it must bypass ensureFocusSession's busy-check
+            // rather than being parked like a normal focus switch would be.
+            session.reset(message.sessionId);
+            await postSessionReplay(message.sessionId, message.title);
             break;
           case "forkSession": {
             const currentId = session.getSessionId();

@@ -909,6 +909,15 @@ export class AgentSession {
     return this.knownSessionId;
   }
 
+  /** Whether a turn is currently in flight — used by the host to avoid killing this
+   * session mid-response when the webview's focus switches to a different chat (see
+   * `ChatWebviewProvider`'s `ensureFocusSession`). Confirmed root cause of a real bug
+   * report: switching sessions used to unconditionally `reset()`/`dispose()` whatever
+   * was currently live, silently truncating its in-progress turn on disk. */
+  isBusy(): boolean {
+    return this.heartbeat.isRunning();
+  }
+
   /** Stops the current live conversation and starts a fresh one, optionally resuming a
    * past session. With `fork: true`, the resumed history continues under a brand-new
    * session id instead of the original — the original session's file is left untouched. */

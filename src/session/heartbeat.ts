@@ -32,6 +32,14 @@ export class HeartbeatWriter {
     this.tick();
   }
 
+  /** Whether a turn is currently in flight for THIS process (mirrors `start()`/
+   * `stop()`'s lifetime) — an in-process equivalent of `isSessionActive()` below, for
+   * callers that already hold the live `AgentSession` and don't need the cross-process
+   * file check. */
+  isRunning(): boolean {
+    return this.timer !== undefined;
+  }
+
   private tick(): void {
     const id = this.sessionId();
     if (id) {
