@@ -164,6 +164,12 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           case "interruptSession":
             await session.interrupt();
             break;
+          case "cancelQueuedMessage":
+            session.cancelQueuedMessage(message.uuid);
+            break;
+          case "editQueuedMessage":
+            session.editQueuedMessage(message.uuid, message.newText);
+            break;
           case "renameSession": {
             const { renameSession } = await import("@anthropic-ai/claude-agent-sdk");
             await renameSession(message.sessionId, message.title, { dir: message.cwd ?? cwd });

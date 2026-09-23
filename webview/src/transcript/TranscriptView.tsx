@@ -1,6 +1,6 @@
-import { useState } from "react";
-import { Image, FileText, Dot, Brain, Info, PictureInPicture2, MessageSquareText, Pencil, Check, Copy, X } from "lucide-react";
-import type { AttachmentSummary } from "../../../shared/protocol";
+import { useEffect, useState } from "react";
+import { Image, FileText, Dot, Brain, Info, PictureInPicture2, MessageSquareText, Pencil, Check, Copy, X, Clock, Trash2 } from "lucide-react";
+import { STEER_ABORT_WINDOW_MS, type AttachmentSummary } from "../../../shared/protocol";
 import type { TranscriptItem } from "../types";
 import { Button } from "../components/Button";
 import { Collapsible } from "../components/Collapsible";
@@ -22,6 +22,11 @@ interface TranscriptViewProps {
    * regenerates from that point, which doesn't make sense to kick off mid-turn. */
   editDisabled: boolean;
   onCopy: (text: string) => void;
+  /** Edits the text of a still-pending "queue" message in place — no fork/regenerate,
+   * since it hasn't been sent yet. */
+  onEditQueuedMessage: (uuid: string, newText: string) => void;
+  /** Cancels a still-pending "queue" message before it's sent. */
+  onCancelQueuedMessage: (uuid: string) => void;
 }
 
 function summarize(text: string, maxLength = 80): string {
@@ -37,6 +42,8 @@ export function TranscriptView({
   onEditMessage,
   editDisabled,
   onCopy,
+  onEditQueuedMessage,
+  onCancelQueuedMessage,
 }: TranscriptViewProps) {
   // Steps (tool calls, thinking, context notes) default open while running/streaming and
   // collapsed once finished, so a response with many steps stays compact — but the user
@@ -51,17 +58,42 @@ export function TranscriptView({
     setEditingItemId(item.id);
     setEditDraft(item.text);
   };
-  const commitEdit = (uuid: string) => {
+  const commitEdit = (item: Extract<TranscriptItem, { kind: "user" }>) => {
     const text = editDraft.trim();
     setEditingItemId(undefined);
-    if (text) {
-      onEditMessage(uuid, text);
+    if (!text) return;
+    if (item.pending && (item.deliveryMode === "queue" || item.deliveryMode === "steer")) {
+      onEditQueuedMessage(item.uuid, text);
+    } else {
+      onEditMessage(item.uuid, text);
     }
   };
 
+  // Pending (queued/steered, not-yet-sent) messages are kept at the very bottom
+  // regardless of when they were added, so a message queued mid-response never appears
+  // to sit earlier in history than it really does — settled items keep their real order,
+  // only the still-pending ones are pulled out and appended after them.
+  const pendingItems = items.filter((item) => item.kind === "user" && item.pending);
+  const settledItems = items.filter((item) => !(item.kind === "user" && item.pending));
+  const orderedItems = [...settledItems, ...pendingItems];
+
+  // Drives the "Steering in Xs…" countdown below — only ticks while a "steer" message
+  // is actually pending, since it's the only pending state with a fixed deadline
+  // ("queue" waits for the current turn to finish, which has no fixed duration to count
+  // down).
+  const hasPendingSteer = pendingItems.some(
+    (item) => item.kind === "user" && item.deliveryMode === "steer"
+  );
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasPendingSteer) return;
+    const id = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(id);
+  }, [hasPendingSteer]);
+
   return (
     <div className="flex flex-col gap-3">
-      {items.map((item) => {
+      {orderedItems.map((item) => {
         switch (item.kind) {
           case "user": {
             const editing = editingItemId === item.id;
@@ -74,14 +106,14 @@ export function TranscriptView({
                     value={editDraft}
                     onChange={(e) => setEditDraft(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEdit(item.uuid);
+                      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEdit(item);
                       else if (e.key === "Escape") setEditingItemId(undefined);
                     }}
                     className="max-w-[85%] min-w-0 resize-none rounded-2xl rounded-tr-sm border border-accent bg-accent px-3 py-2 text-sm text-accent-foreground focus:outline-none"
                   />
                   <div className="flex items-center gap-1.5">
-                    <Button size="sm" onClick={() => commitEdit(item.uuid)}>
-                      <Check size={13} /> Save &amp; regenerate
+                    <Button size="sm" onClick={() => commitEdit(item)}>
+                      <Check size={13} /> {item.pending ? "Save" : "Save & regenerate"}
                     </Button>
                     <Button size="sm" variant="ghost" onClick={() => setEditingItemId(undefined)}>
                       <X size={13} /> Cancel
@@ -90,11 +122,42 @@ export function TranscriptView({
                 </div>
               );
             }
+            // A still-pending "queue"/"steer" message can always be cancelled/edited —
+            // that's the whole point of the window it sits in before being sent —
+            // regardless of `editDisabled` (which only governs re-editing an
+            // already-sent message mid-turn).
+            const canEditPending =
+              item.pending && (item.deliveryMode === "queue" || item.deliveryMode === "steer");
+            const showPencil = item.pending ? canEditPending : !editDisabled;
+            const steerSecondsLeft =
+              item.pending && item.deliveryMode === "steer" && item.timestamp
+                ? Math.max(0, Math.ceil((STEER_ABORT_WINDOW_MS - (now - item.timestamp)) / 1000))
+                : undefined;
             return (
               <div key={item.id} id={item.id} className="group flex flex-col items-end">
                 <div className="flex max-w-[85%] min-w-0 items-start gap-1">
-                  {!editDisabled && (
-                    <Tooltip label="Edit and regenerate from here">
+                  {canEditPending && (
+                    <Tooltip
+                      label={item.deliveryMode === "queue" ? "Cancel this queued message" : "Cancel steering"}
+                    >
+                      <button
+                        onClick={() => onCancelQueuedMessage(item.uuid)}
+                        className="mt-2 shrink-0 cursor-pointer rounded-md p-1 text-muted opacity-0 hover:text-danger group-hover:opacity-100"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </Tooltip>
+                  )}
+                  {showPencil && (
+                    <Tooltip
+                      label={
+                        item.pending
+                          ? item.deliveryMode === "queue"
+                            ? "Edit queued message"
+                            : "Edit steered message"
+                          : "Edit and regenerate from here"
+                      }
+                    >
                       <button
                         onClick={() => startEditing(item)}
                         className="mt-2 shrink-0 cursor-pointer rounded-md p-1 text-muted opacity-0 hover:text-foreground group-hover:opacity-100"
@@ -103,7 +166,12 @@ export function TranscriptView({
                       </button>
                     </Tooltip>
                   )}
-                  <div className="min-w-0 rounded-2xl rounded-tr-sm bg-accent px-3 py-2 text-accent-foreground">
+                  <div
+                    className={cn(
+                      "min-w-0 rounded-2xl rounded-tr-sm px-3 py-2 text-accent-foreground",
+                      item.pending ? "border border-dashed border-accent/60 bg-accent/40" : "bg-accent"
+                    )}
+                  >
                     {item.attachments.length > 0 && (
                       <div className="mb-1 flex flex-wrap gap-1 text-xs">
                         {item.attachments.map((att, i) => (
@@ -124,8 +192,17 @@ export function TranscriptView({
                     <Markdown text={item.text} onAccent />
                   </div>
                 </div>
-                {item.timestamp && (
-                  <span className="mt-0.5 mr-1 text-[10px] text-muted">{formatClockTime(item.timestamp)}</span>
+                {item.pending ? (
+                  <span className="mt-0.5 mr-1 flex items-center gap-1 text-[10px] italic text-muted">
+                    <Clock size={10} />
+                    {item.deliveryMode === "queue"
+                      ? "Queued — sends after this response"
+                      : `Steering in ${steerSecondsLeft ?? 0}s…`}
+                  </span>
+                ) : (
+                  item.timestamp && (
+                    <span className="mt-0.5 mr-1 text-[10px] text-muted">{formatClockTime(item.timestamp)}</span>
+                  )
                 )}
               </div>
             );

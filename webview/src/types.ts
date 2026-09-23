@@ -1,4 +1,4 @@
-import type { AttachmentSummary, SubagentStep } from "../../shared/protocol";
+import type { AttachmentSummary, MessageDeliveryMode, SubagentStep } from "../../shared/protocol";
 
 export interface ToolResultInfo {
   summary: string;
@@ -12,7 +12,22 @@ export interface SubagentStepEntry {
 }
 
 export type TranscriptItem =
-  | { id: string; kind: "user"; text: string; attachments: AttachmentSummary[]; timestamp?: number; uuid: string }
+  | {
+      id: string;
+      kind: "user";
+      text: string;
+      attachments: AttachmentSummary[];
+      timestamp?: number;
+      uuid: string;
+      /** Set for a message sent while a turn was already in progress ("queue"/"steer")
+       * until `queuedMessageSent` confirms it's actually been handed to the model —
+       * see App.tsx's `queuedMessageSent`/`userSubmitted` reducer cases. Undefined for
+       * a normal send, which is never held back. */
+      pending?: boolean;
+      /** Only set alongside `pending` — which delivery mode produced it, since only
+       * "queue" messages have a real cancel/edit window (see TranscriptView). */
+      deliveryMode?: MessageDeliveryMode;
+    }
   | {
       id: string;
       kind: "assistantText";
