@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, Check, ChevronDown, ChevronUp, CircleHelp, Copy, FileDiff, Pencil, Plus, Search, Settings, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, Check, ChevronDown, ChevronUp, CircleHelp, Copy, FileDiff, Pencil, Plus, Search, Settings, SquareTerminal, X } from "lucide-react";
 import { vscodeApi } from "./lib/vscodeApi";
 import { TranscriptView } from "./transcript/TranscriptView";
 import { SessionsView } from "./sessions/SessionsView";
@@ -836,6 +836,22 @@ export function App() {
     post({ type: "openSession", sessionId: session.sessionId, cwd: session.cwd, title: session.title });
   };
 
+  const handleResumeInTerminal = (session: SessionListEntry) => {
+    post({ type: "resumeSessionInTerminal", sessionId: session.sessionId, cwd: session.cwd, title: session.title });
+  };
+
+  // The chat header's own "Resume in terminal" button, for the session already open
+  // in this view — no SessionListEntry at hand here, so cwd is omitted and the host
+  // falls back to this exact session's own cwd (see the message's doc comment).
+  const handleResumeCurrentSessionInTerminal = () => {
+    if (!state.currentSessionId) return;
+    post({
+      type: "resumeSessionInTerminal",
+      sessionId: state.currentSessionId,
+      title: state.currentSessionTitle ?? "Chat",
+    });
+  };
+
   const handleRefreshSessions = () => {
     post({ type: "requestSessionList", limit: state.sessionsLimit });
   };
@@ -1035,6 +1051,17 @@ export function App() {
                 </button>
               </Tooltip>
             )}
+            {state.currentSessionId && (
+              <Tooltip label="Resume in terminal">
+                <button
+                  onClick={handleResumeCurrentSessionInTerminal}
+                  className="cursor-pointer text-muted hover:text-foreground"
+                  aria-label="Resume in terminal"
+                >
+                  <SquareTerminal size={15} />
+                </button>
+              </Tooltip>
+            )}
             <Tooltip label="About this extension">
               <button
                 onClick={() => setHelpOpen(true)}
@@ -1111,6 +1138,7 @@ export function App() {
             hasMore={state.hasMoreSessions}
             onLoadMore={handleLoadMoreSessions}
             onOpenSession={handleOpenSession}
+            onResumeInTerminal={handleResumeInTerminal}
             onRefresh={handleRefreshSessions}
             onDeleteSession={handleDeleteSession}
             onSetArchived={handleSetArchived}

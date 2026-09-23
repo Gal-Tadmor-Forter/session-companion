@@ -31,6 +31,10 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
   private readonly pendingSessionOpen: PendingSessionOpenState;
   private readonly lastActivityOverride: LastActivityOverride;
   private readonly permissionModeState: PermissionModeState;
+  // Keyed by session id so re-clicking "Resume in Terminal" for an already-open
+  // resume focuses the existing terminal instead of spawning a duplicate `claude
+  // --resume` process for the same session.
+  private readonly resumeTerminals = new Map<string, vscode.Terminal>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.heartbeatDir = path.join(context.globalStorageUri.fsPath, "active-sessions");
@@ -39,6 +43,16 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
     this.pendingSessionOpen = new PendingSessionOpenState(context);
     this.lastActivityOverride = new LastActivityOverride(context);
     this.permissionModeState = new PermissionModeState(context);
+    context.subscriptions.push(
+      vscode.window.onDidCloseTerminal((closed) => {
+        for (const [sessionId, terminal] of this.resumeTerminals) {
+          if (terminal === closed) {
+            this.resumeTerminals.delete(sessionId);
+            break;
+          }
+        }
+      })
+    );
   }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -587,6 +601,29 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
             const terminal = vscode.window.createTerminal({ cwd });
             terminal.show();
             terminal.sendText("claude");
+            break;
+          }
+          case "resumeSessionInTerminal": {
+            const existing = this.resumeTerminals.get(message.sessionId);
+            if (existing && existing.exitStatus === undefined) {
+              existing.show();
+              break;
+            }
+            // Session ids are SDK-generated UUIDs; this is a defensive guard against
+            // ever interpolating an unexpected value into the shell command below,
+            // not a real-world case this is expected to hit.
+            if (!/^[a-zA-Z0-9-]+$/.test(message.sessionId)) {
+              vscode.window.showErrorMessage("Can't resume this session: unexpected session id.");
+              break;
+            }
+            const terminal = vscode.window.createTerminal({
+              cwd: message.cwd ?? cwd,
+              name: `Claude: ${message.title}`,
+              iconPath: new vscode.ThemeIcon("comment-discussion"),
+            });
+            this.resumeTerminals.set(message.sessionId, terminal);
+            terminal.show();
+            terminal.sendText(`claude --resume ${message.sessionId}`);
             break;
           }
           case "copyToClipboard":
