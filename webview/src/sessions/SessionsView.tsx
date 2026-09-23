@@ -1,11 +1,26 @@
 import { useMemo, useState } from "react";
-import { RefreshCw, Archive, ArchiveRestore, CircleHelp, Gauge, Pencil, Settings, Trash2 } from "lucide-react";
+import {
+  RefreshCw,
+  Archive,
+  ArchiveRestore,
+  Calendar,
+  CircleHelp,
+  FolderTree,
+  Gauge,
+  Pencil,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import type { SessionListEntry } from "../../../shared/protocol";
 import { DATE_GROUP_ORDER, dateGroupFor, formatRelativeTime, type DateGroup } from "../utils/relativeTime";
 import { Button } from "../components/Button";
+import { MenuItem } from "../components/MenuItem";
+import { Popover } from "../components/Popover";
 import { Spinner } from "../components/Spinner";
 import { Tooltip } from "../components/Tooltip";
 import { useThinkingVerb } from "../utils/thinkingVerbs";
+
+type GroupBy = "date" | "project";
 
 // A separate component (rather than calling the hook inline in the sessions .map below)
 // so each active session gets its own independently-ticking verb without breaking the
@@ -49,6 +64,8 @@ export function SessionsView({
 }: SessionsViewProps) {
   const [query, setQuery] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [groupBy, setGroupBy] = useState<GroupBy>("date");
+  const [groupByMenuOpen, setGroupByMenuOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
@@ -71,6 +88,23 @@ export function SessionsView({
   }, [sessions, query, showArchived]);
 
   const groups = useMemo(() => {
+    if (groupBy === "project") {
+      const byProject = new Map<string, SessionListEntry[]>();
+      for (const session of filtered) {
+        const list = byProject.get(session.repoName) ?? [];
+        list.push(session);
+        byProject.set(session.repoName, list);
+      }
+      return [...byProject.entries()]
+        .map(([repoName, groupSessions]) => ({
+          key: repoName,
+          label: repoName,
+          sessions: groupSessions,
+          mostRecent: Math.max(...groupSessions.map((s) => s.lastModified)),
+        }))
+        .sort((a, b) => b.mostRecent - a.mostRecent);
+    }
+
     const byGroup = new Map<DateGroup, SessionListEntry[]>();
     for (const session of filtered) {
       const group = dateGroupFor(session.lastModified);
@@ -79,10 +113,11 @@ export function SessionsView({
       byGroup.set(group, list);
     }
     return DATE_GROUP_ORDER.filter((g) => byGroup.has(g)).map((g) => ({
-      group: g,
+      key: g as string,
+      label: g as string,
       sessions: byGroup.get(g)!,
     }));
-  }, [filtered]);
+  }, [filtered, groupBy]);
 
   return (
     <div className="flex flex-col gap-3">
@@ -101,6 +136,39 @@ export function SessionsView({
             {showArchived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
           </button>
         </Tooltip>
+        <Popover
+          open={groupByMenuOpen}
+          onOpenChange={setGroupByMenuOpen}
+          side="bottom"
+          anchor={
+            <button
+              title="Group sessions by"
+              className="cursor-pointer rounded-md p-1.5 text-muted hover:bg-surface-hover hover:text-foreground"
+              aria-label="Group sessions by"
+            >
+              {groupBy === "project" ? <FolderTree size={16} /> : <Calendar size={16} />}
+            </button>
+          }
+        >
+          <MenuItem
+            icon={<Calendar size={14} />}
+            label="Date"
+            selected={groupBy === "date"}
+            onClick={() => {
+              setGroupBy("date");
+              setGroupByMenuOpen(false);
+            }}
+          />
+          <MenuItem
+            icon={<FolderTree size={14} />}
+            label="Project"
+            selected={groupBy === "project"}
+            onClick={() => {
+              setGroupBy("project");
+              setGroupByMenuOpen(false);
+            }}
+          />
+        </Popover>
         <Tooltip label="Usage & spend limits">
           <button
             onClick={onOpenUsage}
@@ -149,9 +217,9 @@ export function SessionsView({
           {showArchived ? "No archived sessions." : "No sessions yet. Start a chat below."}
         </div>
       )}
-      {groups.map(({ group, sessions: groupSessions }) => (
-        <div key={group} className="flex flex-col gap-1">
-          <div className="px-1 text-xs font-medium text-muted">{group}</div>
+      {groups.map(({ key, label, sessions: groupSessions }) => (
+        <div key={key} className="flex flex-col gap-1">
+          <div className="px-1 text-xs font-medium text-muted">{label}</div>
           {groupSessions.map((session) => (
             <div
               key={session.sessionId}
@@ -189,7 +257,9 @@ export function SessionsView({
                   </div>
                   <div className="flex min-w-0 items-center gap-1.5 pl-3 text-xs text-muted">
                     <span className="truncate">
-                      {session.repoName} · {formatRelativeTime(session.lastModified)}
+                      {groupBy === "project"
+                        ? formatRelativeTime(session.lastModified)
+                        : `${session.repoName} · ${formatRelativeTime(session.lastModified)}`}
                     </span>
                     {session.active && <RespondingBadge />}
                   </div>

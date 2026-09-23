@@ -12,6 +12,10 @@ interface PopoverProps {
    * position reference for a popover driven by something else, e.g. hover (Radix Anchor).
    * Defaults to true — most popovers in this app are click-toggled menus. */
   interactive?: boolean;
+  /** Which side of the anchor the content opens toward. Defaults to "top" since most
+   * popovers in this app anchor to the bottom composer; pass "bottom" for an anchor near
+   * the top of the view (e.g. the Sessions screen's header row). */
+  side?: "top" | "bottom";
 }
 
 /** Anchored floating panel built on Radix's Popover primitive (the same one shadcn/ui's
@@ -20,7 +24,7 @@ interface PopoverProps {
  * in a narrow VS Code sidebar where a fixed-corner popup would otherwise get clipped or
  * push the page into horizontal scroll. Opens upward by default since the composer sits
  * at the bottom of the view. Closes on outside click or Escape. */
-export function Popover({ open, onOpenChange, anchor, children, className, interactive = true }: PopoverProps) {
+export function Popover({ open, onOpenChange, anchor, children, className, interactive = true, side = "top" }: PopoverProps) {
   const Anchor = interactive ? RadixPopover.Trigger : RadixPopover.Anchor;
 
   return (
@@ -28,7 +32,7 @@ export function Popover({ open, onOpenChange, anchor, children, className, inter
       <Anchor asChild>{anchor}</Anchor>
       <RadixPopover.Portal>
         <RadixPopover.Content
-          side="top"
+          side={side}
           align="start"
           sideOffset={8}
           collisionPadding={8}
