@@ -836,6 +836,10 @@ export function App() {
     post({ type: "openSession", sessionId: session.sessionId, cwd: session.cwd, title: session.title });
   };
 
+  const handleResumeInTerminal = (session: SessionListEntry) => {
+    post({ type: "resumeSessionInTerminal", sessionId: session.sessionId, cwd: session.cwd, title: session.title });
+  };
+
   const handleRefreshSessions = () => {
     post({ type: "requestSessionList", limit: state.sessionsLimit });
   };
@@ -1111,6 +1115,7 @@ export function App() {
             hasMore={state.hasMoreSessions}
             onLoadMore={handleLoadMoreSessions}
             onOpenSession={handleOpenSession}
+            onResumeInTerminal={handleResumeInTerminal}
             onRefresh={handleRefreshSessions}
             onDeleteSession={handleDeleteSession}
             onSetArchived={handleSetArchived}

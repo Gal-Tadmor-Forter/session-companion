@@ -10,6 +10,7 @@ import {
   Gauge,
   Pencil,
   Settings,
+  SquareTerminal,
   Trash2,
   X,
 } from "lucide-react";
@@ -43,6 +44,7 @@ interface SessionsViewProps {
   hasMore: boolean;
   onLoadMore: () => void;
   onOpenSession: (session: SessionListEntry) => void;
+  onResumeInTerminal: (session: SessionListEntry) => void;
   onRefresh: () => void;
   onDeleteSession: (sessionId: string) => void;
   onSetArchived: (sessionId: string, archived: boolean) => void;
@@ -57,6 +59,7 @@ export function SessionsView({
   hasMore,
   onLoadMore,
   onOpenSession,
+  onResumeInTerminal,
   onRefresh,
   onDeleteSession,
   onSetArchived,
@@ -364,6 +367,14 @@ export function SessionsView({
                         className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
                       >
                         <Pencil size={14} />
+                      </button>
+                    </Tooltip>
+                    <Tooltip label="Resume in terminal">
+                      <button
+                        onClick={() => onResumeInTerminal(session)}
+                        className="cursor-pointer rounded-md p-1 text-muted hover:bg-surface hover:text-foreground"
+                      >
+                        <SquareTerminal size={14} />
                       </button>
                     </Tooltip>
                     <Tooltip label={session.archived ? "Unarchive" : "Archive"}>
