@@ -511,7 +511,14 @@ export function TranscriptView({
                 ) : questions ? (
                   <AskUserQuestionCard
                     questions={questions}
-                    onSubmit={(answers) => onPermissionDecision(item.requestId, true, { answers })}
+                    onSubmit={(answers) =>
+                      // `updatedInput` replaces the tool's entire input, not just the
+                      // fields listed here — must still carry `questions` (and anything
+                      // else the model sent) alongside `answers`, or the SDK's schema
+                      // validation rejects it as missing `questions` (confirmed
+                      // empirically: sending `{ answers }` alone fails validation).
+                      onPermissionDecision(item.requestId, true, { ...item.input, answers })
+                    }
                   />
                 ) : (
                   <div className="mt-2.5 flex gap-2">
