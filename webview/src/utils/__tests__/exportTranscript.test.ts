@@ -44,7 +44,7 @@ describe("transcriptToMarkdown", () => {
     const items: TranscriptItem[] = [
       { id: "th1", kind: "thinking", blockId: "0-1", text: "pondering", streaming: false },
       { id: "cn1", kind: "contextNote", text: "<ide_opened_file>x</ide_opened_file>" },
-      { id: "p1", kind: "permission", requestId: "r1", toolName: "Bash", label: "Run ls" },
+      { id: "p1", kind: "permission", requestId: "r1", toolName: "Bash", label: "Run ls", input: {} },
       { id: "ts1", kind: "turnStats", durationMs: 100, costUsd: 0.01, inputTokens: 1, outputTokens: 1 },
     ];
     expect(transcriptToMarkdown(items)).toBe("");

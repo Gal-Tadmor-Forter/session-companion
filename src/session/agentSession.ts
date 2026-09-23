@@ -721,14 +721,18 @@ export class AgentSession {
     }
   }
 
-  resolvePermission(requestId: string, approve: boolean): void {
+  /** `updatedInput` is how a tool like AskUserQuestion actually receives its answer —
+   * its own schema documents the `answers` field as "collected by the permission
+   * component," i.e. exactly this mechanism, not a separate result channel. Ignored for
+   * a deny (nothing to run) or for a tool that doesn't read anything back from it. */
+  resolvePermission(requestId: string, approve: boolean, updatedInput?: Record<string, unknown>): void {
     const pending = this.pendingPermissions.get(requestId);
     if (!pending) {
       return;
     }
     this.pendingPermissions.delete(requestId);
     pending.resolve(
-      approve ? { behavior: "allow" } : { behavior: "deny", message: "User denied permission." }
+      approve ? { behavior: "allow", updatedInput } : { behavior: "deny", message: "User denied permission." }
     );
   }
 

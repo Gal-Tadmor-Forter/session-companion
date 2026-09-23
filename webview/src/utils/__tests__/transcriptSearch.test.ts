@@ -38,7 +38,7 @@ describe("findMatchingItemIds", () => {
     const items: TranscriptItem[] = [
       { id: "th1", kind: "thinking", blockId: "b", text: "bug bug bug", streaming: false },
       { id: "cn1", kind: "contextNote", text: "bug context" },
-      { id: "p1", kind: "permission", requestId: "r", toolName: "Bash", label: "bug command" },
+      { id: "p1", kind: "permission", requestId: "r", toolName: "Bash", label: "bug command", input: {} },
       { id: "ts1", kind: "turnStats", durationMs: 1, costUsd: 0, inputTokens: 0, outputTokens: 0 },
     ];
     expect(findMatchingItemIds(items, "bug")).toEqual([]);
