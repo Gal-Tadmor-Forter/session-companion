@@ -389,9 +389,13 @@ export type WebviewToHostMessage =
   | { type: "openClaudeInTerminal" }
   /** Opens (or, if one's already running for this session, focuses) an integrated
    * terminal in the session's own folder and resumes it there via `claude --resume
-   * <sessionId>` — the "continue this chat outside the extension" escape hatch from
-   * the Sessions list. `title` is display-only, for the terminal's tab name. */
-  | { type: "resumeSessionInTerminal"; sessionId: string; cwd: string; title: string }
+   * <sessionId>` — the "continue this chat outside the extension" escape hatch,
+   * available both from the Sessions list and from an open chat's own header.
+   * `cwd` is omitted for the open-chat case (there's no `SessionListEntry` at hand
+   * there) — the host falls back to the live session's own cwd, same as
+   * `renameSession`'s `cwd?` does. `title` is display-only, for the terminal's tab
+   * name. */
+  | { type: "resumeSessionInTerminal"; sessionId: string; cwd?: string; title: string }
   | { type: "copyToClipboard"; text: string }
   /** Opens a native folder picker and, if the user picks one, grants this chat access
    * to it (`Options.additionalDirectories` — see `AgentSession.addDirectory()`). No

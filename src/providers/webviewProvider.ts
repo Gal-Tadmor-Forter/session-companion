@@ -617,7 +617,7 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
               break;
             }
             const terminal = vscode.window.createTerminal({
-              cwd: message.cwd,
+              cwd: message.cwd ?? cwd,
               name: `Claude: ${message.title}`,
               iconPath: new vscode.ThemeIcon("comment-discussion"),
             });
