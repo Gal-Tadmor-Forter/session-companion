@@ -1164,9 +1164,14 @@ export function App() {
           {state.promptSuggestion}
         </button>
       )}
-      {state.screen === "chat" && (
       <Composer
-        sending={state.sending}
+        // Forced false outside the chat screen so the stop/steer/queue controls (meant
+        // for the chat currently being viewed) never show on the Sessions list — but the
+        // Composer itself must stay mounted there regardless, since typing into it is
+        // the only way to start a new chat from the main screen (confirmed as a real
+        // regression: wrapping the whole Composer in this same condition silently
+        // removed that entry point).
+        sending={state.screen === "chat" && state.sending}
         models={state.models}
         selectedModel={state.selectedModel}
         permissionMode={state.permissionMode}
@@ -1223,10 +1228,9 @@ export function App() {
         onReloadPlugins={handleReloadPlugins}
         onOpenClaudeInTerminal={handleOpenClaudeInTerminal}
         onOpenExternalUrl={handleOpenExternalUrl}
-        contextUsage={state.contextUsage}
+        contextUsage={state.screen === "chat" ? state.contextUsage : undefined}
         onCompact={handleCompact}
       />
-      )}
       <HelpDialog open={helpOpen} onClose={() => setHelpOpen(false)} onOpenExternalUrl={handleOpenExternalUrl} />
       <AttachmentPreviewDialog attachment={previewAttachment} onClose={() => setPreviewAttachment(undefined)} />
       <UsageDialog
