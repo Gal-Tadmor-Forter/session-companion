@@ -44,6 +44,20 @@ built — see "Working the features backlog" below.
   dependency install leaves Vitest/esbuild unable to find a native binding,
   don't debug further — go straight to the full reinstall.
 
+## Local install workflow (uninstall/reinstall testing)
+
+The user tests changes by uninstalling the extension, then reinstalling it via
+Cmd+P → "Install Extension from Location" pointed at this repo folder. That
+command snapshots the folder (including `dist/`) at install time — it is not
+a live link — so a stale `dist/` (gitignored, not rebuilt automatically)
+means the reinstalled extension still runs old code even though the source
+changed.
+
+Always run `npm run build` as the last step of any change the user will test
+this way, so `dist/` is current before they reinstall. This is in addition
+to, not instead of, the existing "run a build before calling it done" rule
+above.
+
 ## Icons
 
 - Use [lucide-react](https://lucide.dev/) for every icon in the webview.
@@ -704,6 +718,10 @@ whoever picks it up next.
 
 ## Process notes
 
+- This is an open-source extension, not an internal Forter project. PR
+  workflows/skills that expect a linked Jira or Asana ticket (for compliance
+  in other Forter repos) don't apply here — skip that step, no ticket link
+  needed in PR descriptions for this repo.
 - Never use heredocs (`cat <<EOF`) or other shell tricks to create/edit
   files — use the file-editing tools directly.
 - macOS has no `timeout` command; don't rely on it in scratch scripts.
