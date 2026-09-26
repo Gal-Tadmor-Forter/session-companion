@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { Image, FileText, Send, X } from "lucide-react";
 import type {
   AccountInfoResult,
@@ -218,6 +218,26 @@ export function Composer(props: ComposerProps) {
       ? props.slashCommands.filter((c) => c.name.toLowerCase().startsWith(slashQuery.toLowerCase()))
       : [];
 
+  const handlePaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    // A copied file (e.g. from Finder, or an image copied from a browser/screenshot
+    // tool) shows up as a File on the clipboard — treat it exactly like a dropped
+    // file. Plain-text paste has no files here, so it falls through to the
+    // textarea's default paste behavior untouched.
+    const files = Array.from(event.clipboardData.files);
+    if (files.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    for (const file of files) {
+      // A pasted screenshot/clipboard image typically arrives with an empty
+      // `name` (unlike a real dropped file), so fall back to a generated one.
+      const fileName = file.name || `pasted-${Date.now()}.${file.type.split("/")[1] ?? "png"}`;
+      readFileAsBase64(file)
+        .then((base64Data) => onAttachDroppedFile(fileName, base64Data))
+        .catch(() => undefined);
+    }
+  };
+
   const handleDragEnter = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     dragCounter.current += 1;
@@ -378,6 +398,7 @@ export function Composer(props: ComposerProps) {
         value={text}
         onChange={(e) => handleChange(e.target.value)}
         onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
         placeholder={
           isDraggingOver
             ? "Drop to attach or mention this file"

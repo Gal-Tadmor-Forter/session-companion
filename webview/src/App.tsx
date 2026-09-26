@@ -675,6 +675,16 @@ export function App() {
     setAutoScroll(true);
   }, [state.currentSessionId, state.screen]);
 
+  // The transcript and the sessions list share one scroll container (`scrollRef`),
+  // so scrolling to the bottom of a long chat leaves that same scrollTop behind
+  // when navigating back to the sessions list. Reset to the top on every entry
+  // into the sessions screen so the list always starts unscrolled.
+  useEffect(() => {
+    if (state.screen === "sessions") {
+      scrollRef.current?.scrollTo({ top: 0 });
+    }
+  }, [state.screen]);
+
   const handleTranscriptScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
