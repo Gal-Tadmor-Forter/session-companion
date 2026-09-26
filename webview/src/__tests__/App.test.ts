@@ -441,9 +441,21 @@ describe("reducer: nested subagent transcripts", () => {
     };
     const next = reducer(withTool, {
       kind: "hostMessage",
-      message: { type: "taskProgress", toolUseId: "t1", summary: "Analyzing auth module" },
+      message: { type: "taskProgress", taskId: "task-1", toolUseId: "t1", summary: "Analyzing auth module" },
     });
     expect(next.items[0]).toMatchObject({ progressSummary: "Analyzing auth module" });
+  });
+
+  it("leaves items untouched when a background-only task_progress has no toolUseId", () => {
+    const withTool = {
+      ...initialState,
+      items: [{ id: "i1", kind: "toolUse" as const, toolUseId: "t1", name: "Task", label: "Task", input: {} }],
+    };
+    const next = reducer(withTool, {
+      kind: "hostMessage",
+      message: { type: "taskProgress", taskId: "task-1", summary: "Working…" },
+    });
+    expect(next.items[0]).not.toHaveProperty("progressSummary");
   });
 });
 
@@ -461,6 +473,29 @@ describe("reducer: background tasks", () => {
       },
     });
     expect(next.backgroundTasks).toEqual([{ taskId: "new", taskType: "local_bash", description: "sleep 8" }]);
+  });
+
+  it("stamps the matching background task with the latest task_progress summary", () => {
+    const withTasks = {
+      ...initialState,
+      backgroundTasks: [
+        { taskId: "t1", taskType: "local_agent", description: "Map portal-next integration center" },
+        { taskId: "t2", taskType: "local_agent", description: "Map onboarder service model" },
+      ],
+    };
+    const next = reducer(withTasks, {
+      kind: "hostMessage",
+      message: { type: "taskProgress", taskId: "t1", summary: "Reading src/onboarding/*.ts" },
+    });
+    expect(next.backgroundTasks).toEqual([
+      {
+        taskId: "t1",
+        taskType: "local_agent",
+        description: "Map portal-next integration center",
+        progressSummary: "Reading src/onboarding/*.ts",
+      },
+      { taskId: "t2", taskType: "local_agent", description: "Map onboarder service model" },
+    ]);
   });
 });
 

@@ -387,10 +387,15 @@ export function reducer(state: State, action: Action): State {
         case "taskProgress":
           return {
             ...state,
-            items: state.items.map((item) =>
-              item.kind === "toolUse" && item.toolUseId === message.toolUseId
-                ? { ...item, progressSummary: message.summary }
-                : item
+            items: message.toolUseId
+              ? state.items.map((item) =>
+                  item.kind === "toolUse" && item.toolUseId === message.toolUseId
+                    ? { ...item, progressSummary: message.summary }
+                    : item
+                )
+              : state.items,
+            backgroundTasks: state.backgroundTasks.map((task) =>
+              task.taskId === message.taskId ? { ...task, progressSummary: message.summary } : task
             ),
           };
         case "backgroundTasksChanged":
@@ -810,6 +815,13 @@ export function App() {
 
   const handleBackToSessions = () => {
     dispatch({ kind: "backToSessions" });
+    // Leaving the chat screen counts as having read whatever this session currently
+    // shows, whether its last turn already finished (nothing was missed) or is still
+    // streaming (a later write still lands after this timestamp, so the unread
+    // marker correctly reappears once it does) — see `markSessionViewed`'s doc comment.
+    if (state.currentSessionId) {
+      post({ type: "markSessionViewed", sessionId: state.currentSessionId });
+    }
     post({ type: "requestSessionList", limit: state.sessionsLimit });
   };
 

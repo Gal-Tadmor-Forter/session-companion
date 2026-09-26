@@ -547,6 +547,9 @@ export class ChatWebviewProvider implements vscode.WebviewViewProvider {
           case "setSessionArchived":
             await this.archiveState.setArchived(message.sessionId, message.archived);
             break;
+          case "markSessionViewed":
+            await this.readState.markViewed(message.sessionId);
+            break;
           case "requestFileMentions": {
             const results = await searchWorkspaceFiles(message.query, cwd);
             this.post(webviewView.webview, { type: "fileMentionResults", query: message.query, results });

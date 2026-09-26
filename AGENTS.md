@@ -718,6 +718,27 @@ whoever picks it up next.
 
 ## Process notes
 
+- Unread marking (`ReadState`/`session.unread`) only advances on explicit
+  events — opening/replaying a session, or the webview posting
+  `markSessionViewed` when navigating from the chat screen back to the
+  sessions list (`handleBackToSessions` in `App.tsx`). It deliberately does
+  **not** advance just because a turn finished while that session happened
+  to be the live one — the host has no reliable way to know the user was
+  actually looking at the chat screen (vs. having already navigated back)
+  when a given `turnComplete` lands. The `markSessionViewed` timestamp
+  approach self-corrects either way: if the last turn had already finished
+  when the user left, nothing after that timestamp exists, so it reads as
+  read; if a turn was still streaming, the write it produces on completion
+  lands after that timestamp, so the session still (correctly) flips back
+  to unread.
+- `BackgroundTaskEntry.progressSummary` (TasksTray's per-task subtitle) and
+  the transcript's per-tool-call `progressSummary` are both fed by the same
+  `taskProgress` host event, keyed by `taskId` and (when the spawning tool
+  call is still on-screen) `toolUseId`. `backgroundTasksChanged` is a full
+  REPLACE snapshot with no progress text of its own — expect
+  `progressSummary` to reset to empty on every such snapshot and repopulate
+  on the next `task_progress` tick (every ~30s per the SDK's own doc
+  comment), not to persist across it.
 - This is an open-source extension, not an internal Forter project. PR
   workflows/skills that expect a linked Jira or Asana ticket (for compliance
   in other Forter repos) don't apply here — skip that step, no ticket link

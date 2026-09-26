@@ -381,11 +381,15 @@ export class AgentSession {
     } else if (
       message.type === "system" &&
       message.subtype === "task_progress" &&
-      message.tool_use_id &&
       (message.summary || message.description)
     ) {
+      // `tool_use_id` is only set when the spawning tool call is still on-screen
+      // (foreground, or backgrounded from a still-visible card) — a task_id is
+      // always present, so background-only tasks (no live transcript card) still
+      // get their TasksTray row updated even without one.
       this.onEvent({
         type: "taskProgress",
+        taskId: message.task_id,
         toolUseId: message.tool_use_id,
         summary: message.summary ?? message.description,
       });

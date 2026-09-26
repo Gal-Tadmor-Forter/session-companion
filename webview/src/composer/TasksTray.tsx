@@ -38,7 +38,10 @@ export function TasksTray({ tasks, onStopTask }: TasksTrayProps) {
         <MenuItem
           key={task.taskId}
           label={task.description}
-          description={task.taskType}
+          // Show live progress once one arrives (proof the task is actually moving,
+          // not hung) — falls back to the static task type until the first
+          // `task_progress` tick lands.
+          description={task.progressSummary ?? task.taskType}
           trailing={
             <Tooltip label="Stop">
               <span
