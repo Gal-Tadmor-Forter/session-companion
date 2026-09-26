@@ -73,6 +73,11 @@ export interface BackgroundTaskEntry {
   taskId: string;
   taskType: string;
   description: string;
+  /** Latest `taskProgress` summary for this task, if any has arrived since the last
+   * `backgroundTasksChanged` snapshot (which doesn't itself carry progress) — shown
+   * as a subtitle so a long-running background task looks like it's moving rather
+   * than silently hanging. */
+  progressSummary?: string;
 }
 
 /** Minimal server config accepted by the "Add MCP server" form — stdio only for now
@@ -253,10 +258,14 @@ export type HostToWebviewMessage =
   /** A piece of a subagent's conversation, forwarded under the Task tool call
    * (`toolUseId`) that spawned it. */
   | { type: "subagentStep"; toolUseId: string; step: SubagentStep }
-  /** Live one-line status for a running Task tool call, from the SDK's own
-   * `task_progress` event — either an AI-generated summary (`agentProgressSummaries`)
-   * or the task's own description. Updates the card's label while it's running. */
-  | { type: "taskProgress"; toolUseId: string; summary: string }
+  /** Live one-line status for a running task, from the SDK's own `task_progress`
+   * event — either an AI-generated summary (`agentProgressSummaries`), an MCP
+   * server's own bounded status message, or the task's own description. `taskId`
+   * always identifies the row in `backgroundTasksChanged`'s list; `toolUseId` is
+   * only present for a task whose spawning tool call is still visible in the
+   * transcript (foreground, or backgrounded from one still on-screen), and updates
+   * that card's label while it's running. */
+  | { type: "taskProgress"; taskId: string; toolUseId?: string; summary: string }
   /** REPLACE semantics, matching the SDK's own `background_tasks_changed` event —
    * always the full current set of live background tasks, not a delta. */
   | { type: "backgroundTasksChanged"; tasks: BackgroundTaskEntry[] }
@@ -401,4 +410,10 @@ export type WebviewToHostMessage =
    * to it (`Options.additionalDirectories` — see `AgentSession.addDirectory()`). No
    * payload: the host owns the picker dialog since a webview can't show a native OS
    * file dialog itself. */
-  | { type: "requestAddDirectory" };
+  | { type: "requestAddDirectory" }
+  /** Marks `sessionId` as read as of now. Sent when leaving the chat screen back to
+   * the sessions list, for whichever session was open — timestamp-based, so it's
+   * correct whether the last turn had already finished (nothing was missed) or was
+   * still streaming (the unread marker still returns on the next turnComplete write,
+   * since that lands after this timestamp). See "backToSessions" handling in App.tsx. */
+  | { type: "markSessionViewed"; sessionId: string };
