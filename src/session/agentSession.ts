@@ -12,6 +12,7 @@ import { AsyncQueue } from "./asyncQueue";
 import type { StagedAttachment } from "../utils/attachments";
 import { HeartbeatWriter } from "./heartbeat";
 import { toUsageReportInfo } from "../utils/usageReport";
+import { dedupeByName } from "../utils/dedupe";
 import type {
   AccountInfoResult,
   AgentInfoEntry,
@@ -843,19 +844,19 @@ export class AgentSession {
   async listAgents(): Promise<AgentInfoEntry[]> {
     const session = await this.ensureStarted();
     const agents = await session.supportedAgents();
-    return agents.map((a) => ({ name: a.name, description: a.description }));
+    return dedupeByName(agents.map((a) => ({ name: a.name, description: a.description })));
   }
 
   async listSlashCommands(): Promise<SlashCommandEntry[]> {
     const session = await this.ensureStarted();
     const commands = await session.supportedCommands();
-    return commands.map((c) => ({ name: c.name, description: c.description }));
+    return dedupeByName(commands.map((c) => ({ name: c.name, description: c.description })));
   }
 
   async listSkills(): Promise<SlashCommandEntry[]> {
     const session = await this.ensureStarted();
     const { skills } = await session.reloadSkills();
-    return skills.map((s) => ({ name: s.name, description: s.description }));
+    return dedupeByName(skills.map((s) => ({ name: s.name, description: s.description })));
   }
 
   async reconnectMcpServer(name: string): Promise<void> {
