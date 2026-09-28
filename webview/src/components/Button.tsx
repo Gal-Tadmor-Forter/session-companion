@@ -25,7 +25,7 @@ export function Button({ variant = "default", size = "md", className, ...props }
   return (
     <button
       className={cn(
-        "cursor-pointer rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+        "inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         variantClasses[variant],
         sizeClasses[size],
         className
