@@ -111,6 +111,8 @@ describe("toUsageReportInfo", () => {
               percent: 10,
               resets_at: null,
               scope: { surface: { display_name: "Chat" } },
+              severity: "info",
+              is_active: false,
             },
           ],
         },
