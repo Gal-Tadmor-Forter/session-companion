@@ -15,6 +15,7 @@ export function MenuItem({ icon, label, description, trailing, selected, classNa
     <button
       className={cn(
         "flex w-full cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-left hover:bg-surface-hover",
+        "focus:bg-surface-hover focus:outline-none",
         "disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent",
         className
       )}
