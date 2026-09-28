@@ -655,6 +655,33 @@ heartbeat write timing, and:
     plan's own `limits[]` rows do. `UsageDialog.tsx` doesn't fabricate a
     reset date for the spend-limit bar; it only shows one where the SDK
     actually supplies it (a `limits` row).
+- Sending a bare local slash command with no real model turn behind it —
+  confirmed for `"/mcp"` with no arguments (real bug report: typing it did
+  nothing) — answers with a complete `assistant` message that never went
+  through the streaming pipeline at all: no `stream_event` of any kind
+  precedes it, `message.message.model` is the literal string
+  `"<synthetic>"`, and content is exactly one `text` block (for `/mcp`:
+  `"N MCP server(s): ... Use \`/mcp\` in the terminal for details."` — the
+  interactive per-server reconnect/enable/disable picker `/mcp` opens in a
+  real terminal has no equivalent over the SDK's streaming-input pipe,
+  confirmed via `supportedCommands()`'s own `argumentHint:
+  "[reconnect|enable|disable [<server>|all]]"`; use this extension's own
+  MCP servers subview in the slash palette instead — reconnect included).
+  `agentSession.ts`'s top-level `"assistant"` branch only ever extracted
+  `tool_use` blocks (real turns' `text` arrives via
+  `textDeltaStart`/`textDelta`/`textDeltaEnd` instead), so a synthetic
+  reply's text block was silently dropped — nothing rendered, matching the
+  report exactly. Fixed by checking `message.message.model ===
+  "<synthetic>"` and, only then, replaying the same three text-delta
+  events in one synchronous burst (a `synthetic-<message.uuid>` blockId so
+  it can't collide with a genuinely streaming block) — reuses the existing
+  rendering path instead of adding a second one. `/compact`'s and
+  `/usage`'s own synthetic replies likely hit the same gap; not
+  independently re-verified since `/usage` already has its own dedicated
+  non-transcript probe path (`requestUsage()`) and `/compact`'s confirmation
+  was never expected to show visible text in the first place — but if a
+  similar "sent a local command, nothing appeared" report comes in for
+  either, check here first before assuming it's a new bug.
 
 ## Testing
 

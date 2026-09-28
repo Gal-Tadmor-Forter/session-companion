@@ -343,6 +343,18 @@ export class AgentSession {
       if (message.user_message_uuid) {
         this.lastUserMessageUuid = message.user_message_uuid;
       }
+      // A "local no-op" slash command (e.g. "/mcp" sent with no arguments, or "/usage" —
+      // see requestUsage()'s own dedicated probe) answers with a complete, already-final
+      // assistant message instead of a real model turn — confirmed empirically: no
+      // stream_event of any kind precedes it, `message.model` is the literal string
+      // "<synthetic>", and content is exactly one text block. A normal turn's text always
+      // arrives incrementally via textDeltaStart/textDelta/textDeltaEnd instead, so without
+      // this branch a synthetic reply's text is silently dropped — this was a real bug
+      // report ("/mcp" appeared to do nothing). Replaying the same three events here (in one
+      // synchronous burst, with a per-message-uuid blockId so it can't collide with any
+      // genuinely streaming block) reuses the exact same rendering path a real streamed
+      // turn already produces, rather than inventing a second one for this one case.
+      const isSyntheticReply = message.message.model === "<synthetic>";
       for (const block of message.message.content) {
         if (block.type === "tool_use") {
           this.onEvent({
@@ -351,6 +363,11 @@ export class AgentSession {
             name: block.name,
             input: (block.input ?? {}) as Record<string, unknown>,
           });
+        } else if (block.type === "text" && isSyntheticReply) {
+          const blockId = `synthetic-${message.uuid}`;
+          this.onEvent({ type: "textDeltaStart", blockId });
+          this.onEvent({ type: "textDelta", blockId, text: block.text });
+          this.onEvent({ type: "textDeltaEnd", blockId });
         }
       }
     } else if (message.type === "user") {
