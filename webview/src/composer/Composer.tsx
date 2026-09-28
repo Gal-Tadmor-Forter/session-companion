@@ -31,6 +31,7 @@ interface ComposerProps {
   sending: boolean;
   models: ModelOption[];
   selectedModel: string;
+  onRequestModels: () => void;
   permissionMode: PermissionModeId;
   bypassPermissionsDisabled: boolean;
   effort: EffortLevelId;
@@ -432,6 +433,7 @@ export function Composer(props: ComposerProps) {
           effort={effort}
           onModelChange={onModelChange}
           onEffortChange={onEffortChange}
+          onRequestModels={props.onRequestModels}
         />
         {props.contextUsage && (
           <ContextGauge usage={props.contextUsage} onCompact={props.onCompact} disabled={sending} />

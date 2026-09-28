@@ -798,6 +798,8 @@ export function App() {
     post({ type: "setModel", model });
   };
 
+  const handleRequestModels = () => post({ type: "requestModels" });
+
   const handlePermissionModeChange = (mode: PermissionModeId) => {
     dispatch({ kind: "permissionModeSelected", mode });
     post({ type: "setPermissionMode", mode });
@@ -1233,6 +1235,7 @@ export function App() {
         sending={state.screen === "chat" && state.sending}
         models={state.models}
         selectedModel={state.selectedModel}
+        onRequestModels={handleRequestModels}
         permissionMode={state.permissionMode}
         bypassPermissionsDisabled={state.bypassPermissionsDisabled}
         effort={state.effort}

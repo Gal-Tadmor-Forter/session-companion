@@ -317,7 +317,12 @@ export function SlashPalette(props: SlashPaletteProps) {
         <>
           <MenuSectionLabel>Skills</MenuSectionLabel>
           {matchingSkills.map((skill) => (
-            <MenuItem key={skill.name} label={skill.name} description={skill.description} />
+            <MenuItem
+              key={skill.name}
+              label={skill.name}
+              description={skill.description}
+              onClick={() => act(() => props.onInsertCommand(skill.name), props.onClose)}
+            />
           ))}
         </>
       ),
@@ -325,15 +330,40 @@ export function SlashPalette(props: SlashPaletteProps) {
   ];
   const visibleRootSections = rootSections.filter((s) => s.visible);
 
+  // Roving keyboard nav across whatever's currently rendered (root sections or a
+  // subview list) — deliberately DOM-based rather than tracking a parallel index in
+  // React state, since the set of rows here comes from several independently-filtered
+  // sections/subviews rather than one flat array; querying live avoids that index ever
+  // drifting out of sync with what's actually on screen. Every focusable Enter/Space-
+  // activates its own onClick natively, so Up/Down only need to move focus, not trigger
+  // anything themselves. The filter input is included as slot 0, so ArrowUp from the
+  // first item returns focus there to keep typing.
+  const handlePaletteKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      props.onClose();
+      return;
+    }
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const focusables = Array.from(
+      e.currentTarget.querySelectorAll<HTMLButtonElement | HTMLInputElement>("input, button")
+    );
+    if (focusables.length === 0) return;
+    e.preventDefault();
+    const currentIndex = focusables.indexOf(document.activeElement as HTMLButtonElement);
+    const delta = e.key === "ArrowDown" ? 1 : -1;
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + delta + focusables.length) % focusables.length;
+    focusables[nextIndex]?.focus();
+  };
+
   return (
-    <div className="absolute bottom-full left-0 z-20 mb-2 max-h-[28rem] w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+    <div
+      onKeyDown={handlePaletteKeyDown}
+      className="absolute bottom-full left-0 z-20 mb-2 max-h-[28rem] w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg"
+    >
       <input
         autoFocus
         value={filter}
         onChange={(e) => setFilter(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") props.onClose();
-        }}
         placeholder="Filter actions..."
         className="w-full border-b border-border bg-transparent px-3 py-2 text-sm text-foreground placeholder:text-muted focus:outline-none"
       />
@@ -492,7 +522,12 @@ export function SlashPalette(props: SlashPaletteProps) {
           <BackList title="Skills" onBack={() => setView("root")}>
             {props.skills.length === 0 && <EmptyRow />}
             {props.skills.map((skill) => (
-              <MenuItem key={skill.name} label={skill.name} description={skill.description} />
+              <MenuItem
+                key={skill.name}
+                label={skill.name}
+                description={skill.description}
+                onClick={() => act(() => props.onInsertCommand(skill.name), props.onClose)}
+              />
             ))}
           </BackList>
         )}
@@ -525,7 +560,10 @@ function currentModelLabel(props: SlashPaletteProps): string {
 function BackList({ title, onBack, children }: { title: string; onBack: () => void; children: React.ReactNode }) {
   return (
     <>
-      <button onClick={onBack} className="flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover">
+      <button
+        onClick={onBack}
+        className="flex w-full cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 text-left text-sm text-foreground hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
+      >
         <ChevronLeft size={14} className="text-muted" /> {title}
       </button>
       <MenuDivider />
@@ -540,7 +578,10 @@ function EmptyRow({ message = "Loading..." }: { message?: string }) {
 
 function ToggleRow({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
   return (
-    <button onClick={onToggle} className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-surface-hover">
+    <button
+      onClick={onToggle}
+      className="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left hover:bg-surface-hover focus:bg-surface-hover focus:outline-none"
+    >
       <span className="text-sm text-foreground">{label}</span>
       <span className={checked ? "h-4 w-7 rounded-full bg-accent p-0.5" : "h-4 w-7 rounded-full bg-border p-0.5"}>
         <span

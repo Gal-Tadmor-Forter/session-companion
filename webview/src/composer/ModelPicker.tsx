@@ -11,16 +11,32 @@ interface ModelPickerProps {
   effort: EffortLevelId;
   onModelChange: (model: string) => void;
   onEffortChange: (effort: EffortLevelId) => void;
+  /** `requestModels` is only ever fired once, at app mount — if that round trip hadn't
+   * come back yet (or was lost) by the time this opens, re-request so the popover
+   * self-heals instead of staying permanently blank. */
+  onRequestModels: () => void;
 }
 
-export function ModelPicker({ models, selectedModel, effort, onModelChange, onEffortChange }: ModelPickerProps) {
+export function ModelPicker({
+  models,
+  selectedModel,
+  effort,
+  onModelChange,
+  onEffortChange,
+  onRequestModels,
+}: ModelPickerProps) {
   const [open, setOpen] = useState(false);
   const current = models.find((m) => m.value === selectedModel);
 
   return (
     <Popover
       open={open}
-      onOpenChange={setOpen}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (next && models.length === 0) {
+          onRequestModels();
+        }
+      }}
       anchor={
         <button
           title="Model and effort"
@@ -32,6 +48,7 @@ export function ModelPicker({ models, selectedModel, effort, onModelChange, onEf
         </button>
       }
     >
+      {models.length === 0 && <div className="px-2 py-2 text-xs text-muted">Loading models…</div>}
       {models.map((model) => (
         <MenuItem
           key={model.value}
