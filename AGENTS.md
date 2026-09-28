@@ -43,6 +43,31 @@ built — see "Working the features backlog" below.
   one: `rm -rf node_modules package-lock.json && npm install`. If a fresh
   dependency install leaves Vitest/esbuild unable to find a native binding,
   don't debug further — go straight to the full reinstall.
+- That full reinstall (`rm -rf node_modules package-lock.json && npm
+  install`) can itself crash on npm 11.5.1 with `TypeError: Cannot read
+  properties of null (reading 'edgesOut')` inside npm's own Arborist
+  (`#loadPeerSet`) — confirmed reproducible bumping
+  `@anthropic-ai/claude-agent-sdk` from `0.3.273` to `0.3.284` specifically;
+  0.3.273 resolves fine from a clean slate, 0.3.284 doesn't, with identical
+  peer/optional-dependency *ranges* in both (so it's an npm resolver bug
+  tripped by some subtler shape of that version's graph, not a real
+  conflict — `--omit=optional` and explicitly pinning `zod` as a direct
+  dependency both failed to work around it; `--legacy-peer-deps` "succeeds"
+  but silently produces a broken install missing `vite`, so don't reach
+  for that flag as a fix). A newer npm (confirmed: `npx --yes
+  npm@12.1.0 install`, which doesn't have this bug) resolves the graph and
+  writes a correct `package-lock.json` — from there, npm 11.5.1's own `npm
+  ci` installs that exact lockfile correctly. npm 12's install-scripts
+  allowlist gate blocks `esbuild`/`@parcel/watcher`/`fsevents` and needs
+  `npx npm@12.1.0 install-scripts approve esbuild @parcel/watcher
+  fsevents` to let their native builds run — that command writes an
+  `allowScripts` block into `package.json`; strip it back out afterward,
+  it's npm-12-only config this repo doesn't otherwise use. Net workflow
+  when a bump needs a full relock and plain `npm install` won't resolve:
+  regenerate the lockfile once with a newer npm, then go back to installing
+  normally (`npm ci`, or plain npm 11 `npm install` once a matching
+  lockfile already exists — only the from-scratch *resolution* step is
+  what breaks).
 
 ## Local install workflow (uninstall/reinstall testing)
 
