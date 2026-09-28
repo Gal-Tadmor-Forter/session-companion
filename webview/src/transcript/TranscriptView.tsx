@@ -330,9 +330,14 @@ export function TranscriptView({
           case "thinking": {
             const hasContent = item.text.trim().length > 0;
             const open = expandedOverrides[item.id] ?? item.streaming;
+            // Before the first thinking token arrives, there's nothing to expand yet —
+            // rendering the Collapsible anyway (as this used to) produced an open chevron
+            // over an empty content pane with just a bare divider, which reads as broken
+            // rather than "starting up." Show a plain, animated row instead and only
+            // switch to the real Collapsible once there's actual text to show/hide.
             const trigger = (
               <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                <Brain size={13} className="shrink-0" />
+                <Brain size={13} className={cn("shrink-0", item.streaming && !hasContent && "animate-pulse")} />
                 <span className="truncate italic">
                   {item.streaming ? "Thinking…" : summarize(item.text, 60) || "Thinking (no visible content)"}
                 </span>
@@ -343,7 +348,7 @@ export function TranscriptView({
                 key={item.id} id={item.id}
                 className="rounded-lg border border-border bg-surface/60 px-3 py-2 text-xs text-muted"
               >
-                {hasContent || item.streaming ? (
+                {hasContent ? (
                   <Collapsible open={open} onOpenChange={(next) => setExpanded(item.id, next)} trigger={trigger}>
                     <div className="mt-1.5 min-w-0 break-words whitespace-pre-wrap border-t border-border pt-1.5 italic">
                       {item.text}
