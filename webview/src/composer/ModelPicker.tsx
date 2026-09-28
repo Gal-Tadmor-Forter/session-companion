@@ -11,9 +11,12 @@ interface ModelPickerProps {
   effort: EffortLevelId;
   onModelChange: (model: string) => void;
   onEffortChange: (effort: EffortLevelId) => void;
-  /** `requestModels` is only ever fired once, at app mount — if that round trip hadn't
-   * come back yet (or was lost) by the time this opens, re-request so the popover
-   * self-heals instead of staying permanently blank. */
+  /** `requestModels` otherwise only ever fires once, at app mount — before account
+   * entitlements (e.g. Opus access) have necessarily resolved, so that first response
+   * can be a smaller "safe defaults" list even though it's non-empty. Re-requesting on
+   * every open (matching how every sibling subview in SlashPalette already re-fetches
+   * on entry) keeps this in sync with the CLI's own `/model` list instead of only
+   * self-healing the all-or-nothing "came back empty" case. */
   onRequestModels: () => void;
 }
 
@@ -33,7 +36,7 @@ export function ModelPicker({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
-        if (next && models.length === 0) {
+        if (next) {
           onRequestModels();
         }
       }}

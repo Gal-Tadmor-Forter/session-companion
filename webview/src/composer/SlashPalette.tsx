@@ -24,6 +24,7 @@ interface SlashPaletteProps {
   effort: EffortLevelId;
   onModelChange: (model: string) => void;
   onEffortChange: (effort: EffortLevelId) => void;
+  onRequestModels: () => void;
   thinkingEnabled: boolean;
   onToggleThinking: () => void;
   outputStyles: string[];
@@ -101,6 +102,7 @@ export function SlashPalette(props: SlashPaletteProps) {
 
   const goTo = (next: View) => {
     setView(next);
+    if (next === "model") props.onRequestModels();
     if (next === "outputStyles") props.onRequestOutputStyles();
     if (next === "agents") props.onRequestAgents();
     if (next === "mcp") props.onRequestMcpServers();
@@ -382,6 +384,7 @@ export function SlashPalette(props: SlashPaletteProps) {
 
         {view === "model" && (
           <BackList title="Select a model" onBack={() => setView("root")}>
+            {props.models.length === 0 && <EmptyRow message="Loading models…" />}
             {props.models.map((model) => (
               <MenuItem
                 key={model.value}
