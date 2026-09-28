@@ -450,7 +450,7 @@ export function Composer(props: ComposerProps) {
               onSteer={() => submit("steer")}
             />
           ) : (
-            <Button onClick={() => submit()} disabled={!text.trim()} className="flex cursor-pointer items-center gap-1.5">
+            <Button onClick={() => submit()} disabled={!text.trim()}>
               <Send size={14} /> Send
             </Button>
           )}
