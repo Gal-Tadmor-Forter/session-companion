@@ -314,6 +314,7 @@ export function Composer(props: ComposerProps) {
           effort={effort}
           onModelChange={onModelChange}
           onEffortChange={onEffortChange}
+          onRequestModels={props.onRequestModels}
           thinkingEnabled={props.thinkingEnabled}
           onToggleThinking={props.onToggleThinking}
           outputStyles={props.outputStyles}
