@@ -557,13 +557,22 @@ export function reducer(state: State, action: Action): State {
           return { ...state, pendingMentionInserts: [...state.pendingMentionInserts, message.result] };
         case "contextUsageLoaded":
           return { ...state, contextUsage: message.usage };
-        case "queuedMessageSent":
-          return {
-            ...state,
-            items: state.items.map((item) =>
-              item.kind === "user" && item.uuid === message.uuid ? { ...item, pending: false } : item
-            ),
-          };
+        case "queuedMessageSent": {
+          // Before this, the item sits wherever it landed in `items` back when it was
+          // first queued — typically well before whatever the in-flight turn streamed
+          // in after it. `TranscriptView` only pulls still-`pending` items down to the
+          // bottom; once `pending` flips false here, it stops getting that treatment
+          // and would otherwise stay stranded up at its original (queue-time) spot
+          // instead of where it actually landed in the conversation. Move it to the end
+          // of `items` and stamp `timestamp` with the real send time (not the moment it
+          // was queued) so both its position and its displayed time reflect when the
+          // model actually got it, not when the user typed it.
+          const index = state.items.findIndex((item) => item.kind === "user" && item.uuid === message.uuid);
+          if (index === -1) return state;
+          const sent = { ...state.items[index], pending: false, timestamp: Date.now() };
+          const rest = [...state.items.slice(0, index), ...state.items.slice(index + 1)];
+          return { ...state, items: [...rest, sent] };
+        }
         case "sessionOpened":
           return {
             ...state,

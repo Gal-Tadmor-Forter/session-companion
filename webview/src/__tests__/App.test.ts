@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { initialState, reducer } from "../App";
 import type { AttachmentSummary, SessionListEntry } from "../../../shared/protocol";
 
@@ -538,6 +538,39 @@ describe("reducer: userSubmitted carries the webview-generated uuid", () => {
       uuid: "u1",
     });
     expect(next.items[0]).toMatchObject({ kind: "user", text: "hello", uuid: "u1" });
+  });
+});
+
+describe("reducer: queuedMessageSent", () => {
+  it("moves the confirmed item to the end and stamps the real send time", () => {
+    const withHistory = {
+      ...initialState,
+      items: [
+        { id: "i1", kind: "user" as const, text: "queued", attachments: [], uuid: "u1", pending: true, timestamp: 1000 },
+        {
+          id: "i2",
+          kind: "assistantText" as const,
+          blockId: "b1",
+          text: "response that arrived after it was queued",
+          streaming: false,
+        },
+      ],
+    };
+    vi.spyOn(Date, "now").mockReturnValue(9999);
+    const next = reducer(withHistory, { kind: "hostMessage", message: { type: "queuedMessageSent", uuid: "u1" } });
+    vi.restoreAllMocks();
+
+    expect(next.items.map((item) => item.id)).toEqual(["i2", "i1"]);
+    expect(next.items[1]).toMatchObject({ id: "i1", pending: false, timestamp: 9999 });
+  });
+
+  it("is a no-op when the uuid doesn't match any item", () => {
+    const withHistory = {
+      ...initialState,
+      items: [{ id: "i1", kind: "user" as const, text: "hi", attachments: [], uuid: "u1", pending: true }],
+    };
+    const next = reducer(withHistory, { kind: "hostMessage", message: { type: "queuedMessageSent", uuid: "missing" } });
+    expect(next.items).toEqual(withHistory.items);
   });
 });
 
