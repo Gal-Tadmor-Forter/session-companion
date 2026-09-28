@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image, FileText, Dot, Brain, Info, PictureInPicture2, MessageSquareText, Pencil, Check, Copy, X, Clock, Trash2 } from "lucide-react";
 import { STEER_ABORT_WINDOW_MS, type AttachmentSummary } from "../../../shared/protocol";
 import type { TranscriptItem } from "../types";
@@ -150,6 +150,19 @@ export function TranscriptView({
 
   const [editingItemId, setEditingItemId] = useState<string | undefined>(undefined);
   const [editDraft, setEditDraft] = useState("");
+  // The edit textarea used to size itself by counting literal "\n"s in the original
+  // text (`rows={item.text.split("\n").length}`), which ignored soft-wrapping — a long
+  // single-line message wrapped to several visual lines still got only 1-2 rows,
+  // leaving most of it scrolled out of view in a cramped little box. Auto-grow to the
+  // content's real rendered height instead, capped by the max-h/overflow-y-auto below
+  // for a pathologically long message.
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const el = editTextareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [editDraft, editingItemId]);
   const startEditing = (item: Extract<TranscriptItem, { kind: "user" }>) => {
     setEditingItemId(item.id);
     setEditDraft(item.text);
@@ -197,15 +210,16 @@ export function TranscriptView({
               return (
                 <div key={item.id} id={item.id} className="flex flex-col items-end gap-1.5">
                   <textarea
+                    ref={editTextareaRef}
                     autoFocus
-                    rows={Math.min(10, Math.max(2, item.text.split("\n").length))}
+                    rows={1}
                     value={editDraft}
                     onChange={(e) => setEditDraft(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) commitEdit(item);
                       else if (e.key === "Escape") setEditingItemId(undefined);
                     }}
-                    className="max-w-[85%] min-w-0 resize-none rounded-2xl rounded-tr-sm border border-accent bg-accent px-3 py-2 text-sm text-accent-foreground focus:outline-none"
+                    className="max-h-64 max-w-[85%] min-w-0 resize-none overflow-y-auto rounded-2xl rounded-tr-sm border border-accent bg-accent px-3 py-2 text-sm text-accent-foreground focus:outline-none"
                   />
                   <div className="flex items-center gap-1.5">
                     <Button size="sm" onClick={() => commitEdit(item)}>
