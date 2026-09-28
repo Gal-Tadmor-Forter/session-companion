@@ -56,18 +56,26 @@ built — see "Working the features backlog" below.
   but silently produces a broken install missing `vite`, so don't reach
   for that flag as a fix). A newer npm (confirmed: `npx --yes
   npm@12.1.0 install`, which doesn't have this bug) resolves the graph and
-  writes a correct `package-lock.json` — from there, npm 11.5.1's own `npm
-  ci` installs that exact lockfile correctly. npm 12's install-scripts
-  allowlist gate blocks `esbuild`/`@parcel/watcher`/`fsevents` and needs
-  `npx npm@12.1.0 install-scripts approve esbuild @parcel/watcher
-  fsevents` to let their native builds run — that command writes an
-  `allowScripts` block into `package.json`; strip it back out afterward,
-  it's npm-12-only config this repo doesn't otherwise use. Net workflow
-  when a bump needs a full relock and plain `npm install` won't resolve:
-  regenerate the lockfile once with a newer npm, then go back to installing
-  normally (`npm ci`, or plain npm 11 `npm install` once a matching
-  lockfile already exists — only the from-scratch *resolution* step is
-  what breaks).
+  writes a correct `package-lock.json`. npm 12's install-scripts allowlist
+  gate blocks `esbuild`/`@parcel/watcher`/`fsevents` and needs `npx
+  npm@12.1.0 install-scripts approve esbuild @parcel/watcher fsevents` to
+  let their native builds run — that command writes an `allowScripts`
+  block into `package.json`; strip it back out afterward, it's
+  npm-12-only config this repo doesn't otherwise use. Net workflow when a
+  bump needs a full relock and plain `npm install` won't resolve:
+  regenerate the lockfile once with the newer npm, verify `tsc`/`vitest`/
+  build pass on the node_modules IT produced, and stop there — don't nuke
+  and reinstall again with npm 11.5.1 "to double check." That's not paranoia:
+  confirmed empirically that npm 11.5.1's own optional-dependency bug
+  (previous bullet, npm/cli#4828) is genuinely flaky on this exact
+  rolldown-binding case — `npm ci` against a known-good lockfile failed on
+  one attempt and succeeded on another, with nothing else changing between
+  them. Neither `npm ci` nor `npm install` is reliably safe to reach for
+  afterward as a "just re-verify" step on npm 11.5.1; if you must
+  reinstall later (e.g. a teammate's `npm install` locally), that's the
+  known bug recurring, not a sign the lockfile is wrong — retry, and if it
+  keeps failing, redo the relock-with-newer-npm dance rather than debugging
+  further.
 
 ## Local install workflow (uninstall/reinstall testing)
 

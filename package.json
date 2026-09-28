@@ -106,7 +106,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "devDependencies": {
-    "@anthropic-ai/sdk": "0.126.0",
+    "@anthropic-ai/sdk": "0.129.0",
     "@tailwindcss/cli": "4.3.3",
     "@types/node": "24.13.5",
     "@types/react": "19.3.0",
